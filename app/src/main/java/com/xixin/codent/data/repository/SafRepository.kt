@@ -1,3 +1,4 @@
+// [文件路径: app/src/main/java/com/xixin/codent/data/repository/SafRepository.kt]
 package com.xixin.codent.data.repository
 
 import android.content.Context
@@ -25,15 +26,17 @@ class SafRepository(private val context: Context) {
     
     private val prefs = context.getSharedPreferences("codent_settings", Context.MODE_PRIVATE)
 
-    // 🔥 聊天记忆文件与解析器配置
     private val chatHistoryFile = File(context.filesDir, "chat_history.json")
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+    fun saveApiBaseUrl(url: String) = prefs.edit().putString("api_base_url", url).apply()
+    fun getApiBaseUrl(): String = prefs.getString("api_base_url", "https://api.deepseek.com/chat/completions") ?: "https://api.deepseek.com/chat/completions"
 
     fun saveApiKey(key: String) = prefs.edit().putString("api_key", key).apply()
     fun getApiKey(): String = prefs.getString("api_key", "") ?: ""
 
     fun saveSelectedModel(model: String) = prefs.edit().putString("selected_model", model).apply()
-    fun getSelectedModel(): String = prefs.getString("selected_model", "deepseek-v4-flash") ?: "deepseek-v4-flash"
+    fun getSelectedModel(): String = prefs.getString("selected_model", "deepseek-reasoner") ?: "deepseek-reasoner"
 
     fun saveThinkingEnabled(enabled: Boolean) = prefs.edit().putBoolean("thinking_enabled", enabled).apply()
     fun isThinkingEnabled(): Boolean = prefs.getBoolean("thinking_enabled", true)
@@ -47,12 +50,8 @@ class SafRepository(private val context: Context) {
         }
     }
 
-    // ==========================================
-    // 记忆存盘相关能力
-    // ==========================================
     fun saveChatHistory(messages: List<ChatMessage>) {
         try {
-            // 过滤掉正在 loading 的状态消息，避免重启后卡在 loading
             val validMessages = messages.filter { !it.isLoading }
             chatHistoryFile.writeText(json.encodeToString(validMessages))
         } catch (e: Exception) {
@@ -74,21 +73,12 @@ class SafRepository(private val context: Context) {
         if (chatHistoryFile.exists()) chatHistoryFile.delete()
     }
 
-    // ==========================================
-    // 极速文件系统能力
-    // ==========================================
     fun listFilesFlow(folderUri: Uri): Flow<List<FileNode>> = flow {
         val fileList = mutableListOf<FileNode>()
         try {
             val docId = DocumentsContract.getDocumentId(folderUri)
             val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(folderUri, docId)
-            
-            val projection = arrayOf(
-                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                DocumentsContract.Document.COLUMN_MIME_TYPE,
-                DocumentsContract.Document.COLUMN_SIZE
-            )
+            val projection = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_SIZE)
 
             context.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
                 val idIdx = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
@@ -128,7 +118,7 @@ class SafRepository(private val context: Context) {
         try {
             val documentFile = DocumentFile.fromSingleUri(context, fileUri)
             if (documentFile != null && documentFile.length() > 1024 * 1024) {
-                return@withContext "错误：文件过大 (>1MB)，Agent 拒绝读取以保护 Token 成本。"
+                return@withContext "错误：文件过大 (>1MB)，拒绝读取以保护 Token 成本。"
             }
             context.contentResolver.openInputStream(fileUri)?.use { inputStream ->
                 val lines = BufferedReader(InputStreamReader(inputStream)).readLines()
@@ -147,17 +137,12 @@ class SafRepository(private val context: Context) {
                     return@withContext "错误：行号范围超出文件长度 (总行数: ${lines.size})"
                 }
 
-                val snippet = lines.subList(actualStart, actualEnd)
-                    .mapIndexed { index, line -> "${actualStart + index + 1} | $line" }
-                    .joinToString("\n")
+                val snippet = lines.subList(actualStart, actualEnd).mapIndexed { index, line -> "${actualStart + index + 1} | $line" }.joinToString("\n")
 
                 buildString {
-                    append("文件总行数: ${lines.size}\n")
-                    append("当前内容片段 (行 ${actualStart + 1} - $actualEnd):\n")
+                    append("文件总行数: ${lines.size}\n当前片段 (行 ${actualStart + 1} - $actualEnd):\n")
                     append(snippet)
-                    if (isTruncated) {
-                        append("\n\n...(⚠️ 系统警告：为了防止 Token 爆炸，代码已强制在 300 行处截断！请使用新的 start_line 继续翻页阅读后面内容！)...")
-                    }
+                    if (isTruncated) append("\n\n...(系统截断：文件过长，超过 300 行部分已被折叠)...")
                 }
             } ?: "无法读取文件"
         } catch (e: Exception) {
@@ -176,10 +161,43 @@ class SafRepository(private val context: Context) {
         return@withContext currentDoc.uri
     }
 
-    // 🔥 双保险写入机制，彻底解决“点击确认没反应”的各种 Android 定制系统兼容Bug
+    // 🔥 新增：创建文件/文件夹
+    suspend fun createFileByRelativePath(rootUri: Uri, relativePath: String, content: String): String = withContext(Dispatchers.IO) {
+        try {
+            var currentDoc = DocumentFile.fromTreeUri(context, rootUri) ?: return@withContext "无法访问项目根目录"
+            val segments = relativePath.split("/").filter { it.isNotBlank() }
+            if (segments.isEmpty()) return@withContext "路径无效"
+
+            val fileName = segments.last()
+            val folderSegments = segments.dropLast(1)
+
+            // 递归创建目录
+            for (segment in folderSegments) {
+                var nextDoc = currentDoc.listFiles().find { it.name == segment && it.isDirectory }
+                if (nextDoc == null) {
+                    nextDoc = currentDoc.createDirectory(segment)
+                    if (nextDoc == null) return@withContext "创建目录 $segment 失败"
+                }
+                currentDoc = nextDoc
+            }
+
+            // 创建文件
+            var fileDoc = currentDoc.listFiles().find { it.name == fileName }
+            if (fileDoc == null) {
+                fileDoc = currentDoc.createFile("*/*", fileName)
+                if (fileDoc == null) return@withContext "创建文件 $fileName 失败"
+            }
+
+            // 写入内容
+            val success = overwriteFile(fileDoc.uri, content)
+            if (success) "✅ 成功创建并写入文件: $relativePath" else "❌ 写入文件失败"
+        } catch (e: Exception) {
+            "创建文件异常: ${e.message}"
+        }
+    }
+
     suspend fun overwriteFile(fileUri: Uri, newContent: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            // 第一重保险："rwt" 模式 (读、写、截断)，Android 标准推荐的覆写模式
             context.contentResolver.openOutputStream(fileUri, "rwt")?.use { outputStream ->
                 outputStream.write(newContent.toByteArray())
                 outputStream.flush()
@@ -187,7 +205,6 @@ class SafRepository(private val context: Context) {
             true
         } catch (e: Exception) {
             e.printStackTrace()
-            // 第二重保险：某些国产定制 ROM 不支持 rwt，降级使用普通的 "w" (覆盖写) 模式
             try {
                 context.contentResolver.openOutputStream(fileUri, "w")?.use { outputStream ->
                     outputStream.write(newContent.toByteArray())

@@ -14,6 +14,8 @@ import com.xixin.codent.ui.theme.CodentTheme
 class MainActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        //老弟你看见我了吗
+        //看见了
         com.xixin.codent.wrapper.log.AppLog.isVisible = true
         setContent {
             CodentTheme {

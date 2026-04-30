@@ -25,7 +25,7 @@ import com.xixin.codent.ui.settings.SettingsPanel
 
 enum class WorkspaceTab(val title: String, val icon: ImageVector) {
     EXPLORER("资源", Icons.Default.Folder),
-    EDITOR("代码", Icons.Default.Code),
+    PREVIEW("预览", Icons.Default.Code),
     AGENT("终端", Icons.Default.Terminal),
     SETTINGS("设置", Icons.Default.Settings)
 }
@@ -85,9 +85,9 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     onInitWorkspace = { folderPickerLauncher.launch(null) },
                     onNavigateBack = { viewModel.navigateBack() },
                     onFolderClick = { viewModel.navigateIntoFolder(it) },
-                    onFileClick = { fileNode -> viewModel.openFile(fileNode) { currentTab = WorkspaceTab.EDITOR } }
+                    onFileClick = { fileNode -> viewModel.openFile(fileNode) { currentTab = WorkspaceTab.PREVIEW } }
                 )
-                WorkspaceTab.EDITOR -> EditorPanel(
+                WorkspaceTab.PREVIEW -> EditorPanel(
                     fileName = uiState.selectedFile?.name ?: "未选中文件",
                     content = uiState.currentCodeContent
                 )
@@ -98,22 +98,19 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     onSendMessage = { viewModel.sendChatMessage(it) },
                     onConfirmPatch = { viewModel.confirmPatch() },
                     onRejectPatch = { viewModel.rejectPatch() },
-                    onDeleteMessage = { index ->
-                        if (index == -1) viewModel.clearChat()
-                        else viewModel.deleteMessage(index)
-                    }
+                    onDeleteMessage = { index -> viewModel.deleteMessage(index) },
+                    // 🔥 就在这！补齐了要求传入的 onEditUserMessage 参数！
+                    onEditUserMessage = { index, text -> viewModel.editAndResendMessage(index, text) }
                 )
                 WorkspaceTab.SETTINGS -> SettingsPanel(
+                    apiBaseUrl = uiState.apiBaseUrl,
                     apiKey = uiState.apiKey,
                     currentModel = uiState.selectedModel,
                     enableThinking = uiState.enableThinking,
-                    onSaveConfig = { key, model -> viewModel.saveConfig(key, model) },
+                    onSaveConfig = { baseUrl, key, model -> viewModel.saveConfig(baseUrl, key, model) },
                     onSaveThinking = { enabled -> viewModel.saveThinkingEnabled(enabled) }
                 )
             }
         }
     }
-
-    // 浮动日志面板（总是在最上层）
-    
 }

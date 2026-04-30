@@ -1,3 +1,4 @@
+// [文件路径: app/src/main/java/com/xixin/codent/data/api/AiApiService.kt]
 package com.xixin.codent.data.api
 
 import com.xixin.codent.wrapper.log.AppLog
@@ -12,35 +13,18 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
-// ============================== 1. 工具定义 ==============================
 @Serializable
-data class Tool(
-    val type: String = "function",
-    val function: FunctionDef
-)
+data class Tool(val type: String = "function", val function: FunctionDef)
 
 @Serializable
-data class FunctionDef(
-    val name: String,
-    val description: String,
-    val parameters: JsonElement
-)
+data class FunctionDef(val name: String, val description: String, val parameters: JsonElement)
 
 @Serializable
-data class ToolCall(
-    val index: Int = 0,               // 用于区分并行的工具流
-    val id: String = "",
-    val type: String = "function",
-    val function: FunctionCall
-)
+data class ToolCall(val index: Int = 0, val id: String = "", val type: String = "function", val function: FunctionCall)
 
 @Serializable
-data class FunctionCall(
-    val name: String? = null,
-    val arguments: String = ""
-)
+data class FunctionCall(val name: String? = null, val arguments: String = "")
 
-// ============================== 2. 消息结构 ==============================
 @Serializable
 data class ApiMessage(
     val role: String,
@@ -48,7 +32,7 @@ data class ApiMessage(
     @SerialName("reasoning_content") val reasoningContent: String? = null,
     @SerialName("tool_calls") val toolCalls: List<ToolCall>? = null,
     @SerialName("tool_call_id") val toolCallId: String? = null,
-    val name: String? = null          // tool 消息专用
+    val name: String? = null
 )
 
 @Serializable
@@ -59,7 +43,6 @@ data class DeltaMessage(
     @SerialName("tool_calls") val toolCalls: List<ToolCall>? = null
 )
 
-// ============================== 3. 请求/响应包装 ==============================
 @Serializable
 data class ChatRequest(
     val model: String,
@@ -71,84 +54,54 @@ data class ChatRequest(
 )
 
 @Serializable
-data class ChunkResponse(
-    val choices: List<ChunkChoice> = emptyList(),
-    val usage: Usage? = null
-)
+data class ChunkResponse(val choices: List<ChunkChoice> = emptyList(), val usage: Usage? = null)
 
 @Serializable
-data class ChunkChoice(
-    val delta: DeltaMessage,
-    @SerialName("finish_reason") val finishReason: String? = null
-)
+data class ChunkChoice(val delta: DeltaMessage, @SerialName("finish_reason") val finishReason: String? = null)
 
 @Serializable
-data class Usage(
-    @SerialName("prompt_tokens") val promptTokens: Int = 0,
-    @SerialName("completion_tokens") val completionTokens: Int = 0
-)
+data class Usage(@SerialName("prompt_tokens") val promptTokens: Int = 0, @SerialName("completion_tokens") val completionTokens: Int = 0)
 
-// ============================== 4. 流式事件 ==============================
 sealed class StreamEvent {
     data class Content(val text: String) : StreamEvent()
-    data class Reasoning(val text: String) : StreamEvent() // 🔥 新增：独立思考事件
+    data class Reasoning(val text: String) : StreamEvent()
     data class ToolCallStarted(val functionName: String) : StreamEvent()
     data class ToolCallComplete(val toolCallId: String, val functionName: String, val arguments: String) : StreamEvent()
     data class Done(val usage: Usage?) : StreamEvent()
     data class Error(val message: String) : StreamEvent()
 }
 
-// ============================== 5. API 服务 ==============================
 class AiApiService(private val client: HttpClient) {
-    private val baseUrl = "https://api.deepseek.com/chat/completions"
-    private val json = Json {
-        ignoreUnknownKeys = true
-        isLenient = true
-        coerceInputValues = true
-    }
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
 
-    private class ToolCallTracker(
-        var id: String = "", 
-        var name: String = "", 
-        val args: StringBuilder = StringBuilder()
-    )
+    private class ToolCallTracker(var id: String = "", var name: String = "", val args: StringBuilder = StringBuilder())
 
     fun getAgentCompletionStream(
+        baseUrl: String,
         apiKey: String,
         model: String,
         messages: List<ApiMessage>,
         tools: List<Tool>? = null,
         enableThinking: Boolean = true
     ): Flow<StreamEvent> = flow {
-        AppLog.d("AiApiService 请求: model=$model, enableThinking=$enableThinking, messages.size=${messages.size}")
+        AppLog.d("AiApiService: 发起请求到 $baseUrl, model=$model, msg.size=${messages.size}")
 
         try {
-            val thinkingParam = if (enableThinking) {
-                buildJsonObject { put("type", "enabled") }
-            } else {
-                buildJsonObject { put("type", "disabled") }
-            }
+            val thinkingParam = if (enableThinking) buildJsonObject { put("type", "enabled") } else buildJsonObject { put("type", "disabled") }
+            
             client.preparePost(baseUrl) {
                 header(HttpHeaders.Authorization, "Bearer $apiKey")
                 contentType(ContentType.Application.Json)
-                setBody(
-                    ChatRequest(
-                        model = model,
-                        messages = messages,
-                        tools = tools,
-                        stream = true,
-                        thinking = thinkingParam
-                    )
-                )
+                setBody(ChatRequest(model = model, messages = messages, tools = tools, stream = true, thinking = thinkingParam))
             }.execute { response ->
                 if (!response.status.isSuccess()) {
                     val errorBody = runCatching { response.bodyAsText() }.getOrNull()
-                    val errorMsg = "HTTP ${response.status.value}: ${response.status.description}"
-                    AppLog.e("API 响应错误: $errorMsg, body=$errorBody")
-                    emit(StreamEvent.Error("$errorMsg\n$errorBody"))
+                    AppLog.d("API 请求失败 HTTP ${response.status.value}: $errorBody")
+                    emit(StreamEvent.Error("HTTP ${response.status.value}\n$errorBody"))
                     return@execute
                 }
-                AppLog.d("API 连接成功，开始读取流")
+
+                AppLog.d("API 连接成功，开始读取数据流...")
 
                 val channel = response.bodyAsChannel()
                 val toolTrackers = mutableMapOf<Int, ToolCallTracker>()
@@ -156,31 +109,31 @@ class AiApiService(private val client: HttpClient) {
                 while (!channel.isClosedForRead) {
                     val line = channel.readUTF8Line()?.trim() ?: break
                     if (line.isEmpty() || !line.startsWith("data: ")) continue
-
                     val data = line.removePrefix("data: ").trim()
-                    if (data == "[DONE]") break
+                    if (data == "[DONE]") {
+                        AppLog.d("流式响应接收到 [DONE] 标记")
+                        break
+                    }
 
                     try {
                         val chunk = json.decodeFromString<ChunkResponse>(data)
-                        if (chunk.usage != null) emit(StreamEvent.Done(chunk.usage))
+                        if (chunk.usage != null) {
+                            AppLog.d("收到 Token 消耗统计: Prompt=${chunk.usage.promptTokens}, Completion=${chunk.usage.completionTokens}")
+                            emit(StreamEvent.Done(chunk.usage))
+                        }
 
                         val choice = chunk.choices.firstOrNull() ?: continue
                         val delta = choice.delta
 
-                        // 🔥 修改：分离普通内容与思考内容
-                        if (!delta.reasoningContent.isNullOrEmpty()) {
-                            emit(StreamEvent.Reasoning(delta.reasoningContent))
-                        }
-                        if (!delta.content.isNullOrEmpty()) {
-                            emit(StreamEvent.Content(delta.content))
-                        }
+                        if (!delta.reasoningContent.isNullOrEmpty()) emit(StreamEvent.Reasoning(delta.reasoningContent))
+                        if (!delta.content.isNullOrEmpty()) emit(StreamEvent.Content(delta.content))
 
                         delta.toolCalls?.forEach { tc ->
                             val tracker = toolTrackers.getOrPut(tc.index) { ToolCallTracker() }
-                            
                             if (tc.id.isNotEmpty()) tracker.id = tc.id
                             tc.function.name?.let {
                                 tracker.name = it
+                                AppLog.d("⚡ 触发工具调度: $it (Call ID: ${tc.id})")
                                 emit(StreamEvent.ToolCallStarted(it))
                             }
                             tracker.args.append(tc.function.arguments)
@@ -189,18 +142,19 @@ class AiApiService(private val client: HttpClient) {
                         if (choice.finishReason == "tool_calls") {
                             toolTrackers.values.forEach { tracker ->
                                 if (tracker.name.isNotEmpty()) {
+                                    AppLog.d("✅ 工具参数流接收完毕: ${tracker.name} -> 参数: ${tracker.args}")
                                     emit(StreamEvent.ToolCallComplete(tracker.id, tracker.name, tracker.args.toString()))
                                 }
                             }
                         }
                     } catch (e: Exception) {
-                        AppLog.w("SSE 解析跳过: ${e.message}")
+                        AppLog.d("SSE 解析跳过或异常: ${e.message}")
                     }
                 }
-                AppLog.d("流读取完成")
+                AppLog.d("当前通道流读取完成")
             }
         } catch (e: Exception) {
-            AppLog.e("连接异常: ${e.message}")
+            AppLog.d("连接异常: ${e.localizedMessage}")
             emit(StreamEvent.Error("连接异常: ${e.localizedMessage}"))
         }
     }
