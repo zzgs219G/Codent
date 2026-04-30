@@ -28,6 +28,7 @@ data class FunctionDef(
 
 @Serializable
 data class ToolCall(
+    val index: Int = 0,               // 🔥 修复：用于区分并行的工具流
     val id: String = "",
     val type: String = "function",
     val function: FunctionCall
@@ -112,6 +113,13 @@ class AiApiService(private val client: HttpClient) {
         coerceInputValues = true
     }
 
+    // 🔥 修复：内部类用于追踪单个工具流的状态
+    private class ToolCallTracker(
+        var id: String = "", 
+        var name: String = "", 
+        val args: StringBuilder = StringBuilder()
+    )
+
     fun getAgentCompletionStream(
         apiKey: String,
         model: String,
@@ -121,16 +129,12 @@ class AiApiService(private val client: HttpClient) {
     ): Flow<StreamEvent> = flow {
         AppLog.d("AiApiService 请求: model=$model, enableThinking=$enableThinking, messages.size=${messages.size}")
 
-        // 调试：打印完整请求体（取消注释以诊断）
-        // val reqBody = ChatRequest(model, messages, true, buildJsonObject { put("include_usage", true) }, tools, if (enableThinking) buildJsonObject { put("type", "enabled") } else null)
-        // AppLog.d("Request body: ${json.encodeToString(reqBody)}")
-
         try {
             val thinkingParam = if (enableThinking) {
-    buildJsonObject { put("type", "enabled") }
-} else {
-    buildJsonObject { put("type", "disabled") }   // 明确禁用，而不是 null
-}
+                buildJsonObject { put("type", "enabled") }
+            } else {
+                buildJsonObject { put("type", "disabled") }   // 明确禁用，而不是 null
+            }
             client.preparePost(baseUrl) {
                 header(HttpHeaders.Authorization, "Bearer $apiKey")
                 contentType(ContentType.Application.Json)
@@ -154,9 +158,9 @@ class AiApiService(private val client: HttpClient) {
                 AppLog.d("API 连接成功，开始读取流")
 
                 val channel = response.bodyAsChannel()
-                var toolId = ""
-                var funcName = ""
-                val funcArgsAccumulator = StringBuilder()
+                
+                // 🔥 修复：并行工具追踪映射表
+                val toolTrackers = mutableMapOf<Int, ToolCallTracker>()
 
                 while (!channel.isClosedForRead) {
                     val line = channel.readUTF8Line()?.trim() ?: break
@@ -175,17 +179,25 @@ class AiApiService(private val client: HttpClient) {
                         val text = delta.content ?: delta.reasoningContent
                         if (!text.isNullOrEmpty()) emit(StreamEvent.Content(text))
 
-                        delta.toolCalls?.firstOrNull()?.let { tc ->
-                            if (tc.id.isNotEmpty()) toolId = tc.id
+                        // 🔥 修复：并行累加 ToolCall（替代了之前的 firstOrNull() 单个累加）
+                        delta.toolCalls?.forEach { tc ->
+                            val tracker = toolTrackers.getOrPut(tc.index) { ToolCallTracker() }
+                            
+                            if (tc.id.isNotEmpty()) tracker.id = tc.id
                             tc.function.name?.let {
-                                funcName = it
+                                tracker.name = it
                                 emit(StreamEvent.ToolCallStarted(it))
                             }
-                            funcArgsAccumulator.append(tc.function.arguments)
+                            tracker.args.append(tc.function.arguments)
                         }
 
-                        if (choice.finishReason == "tool_calls" && funcName.isNotEmpty()) {
-                            emit(StreamEvent.ToolCallComplete(toolId, funcName, funcArgsAccumulator.toString()))
+                        // 🔥 修复：结束时遍历所有 tracker 并发出所有的完整函数调用
+                        if (choice.finishReason == "tool_calls") {
+                            toolTrackers.values.forEach { tracker ->
+                                if (tracker.name.isNotEmpty()) {
+                                    emit(StreamEvent.ToolCallComplete(tracker.id, tracker.name, tracker.args.toString()))
+                                }
+                            }
                         }
                     } catch (e: Exception) {
                         AppLog.w("SSE 解析跳过: ${e.message}")

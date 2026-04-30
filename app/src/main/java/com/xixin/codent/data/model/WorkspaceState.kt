@@ -6,7 +6,7 @@ data class PatchProposal(
     val targetFileUri: Uri,
     val targetFileName: String,
     val originalContent: String,
-    val diffString: String,
+    val diffText: String,
     val proposedContent: String 
 )
 

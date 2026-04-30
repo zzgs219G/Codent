@@ -1,0 +1,36 @@
+{
+  "allFiles": [
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/main/MainViewModel.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 22956,
+          "line": 547
+        },
+        "start": {
+          "column": 0,
+          "index": 22956,
+          "line": 547
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/chat/ChatPanel.kt",
+      "selection": {
+        "end": {
+          "column": 7,
+          "index": 14618,
+          "line": 360
+        },
+        "start": {
+          "column": 7,
+          "index": 14618,
+          "line": 360
+        }
+      }
+    }
+  ],
+  "projectPath": "/storage/emulated/0/CodeOnTheGoProjects/Codent",
+  "selectedFile": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/chat/ChatPanel.kt"
+}

@@ -2,6 +2,7 @@
 package com.xixin.codent.ui.editor
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -46,7 +47,9 @@ fun EditorPanel(fileName: String, content: String) {
                     fontSize = 13.sp,
                     lineHeight = 20.sp,
                     color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.verticalScroll(rememberScrollState())
+                    modifier = Modifier
+                        .verticalScroll(rememberScrollState())
+                        .horizontalScroll(rememberScrollState()) // 🔥 修复：添加横向滚动，防止代码被截断
                 )
             }
         }

@@ -17,13 +17,13 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.*
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
-import kotlinx.serialization.SerializationException
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -38,9 +38,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val httpClient = HttpClient(CIO) {
         install(ContentNegotiation) { json(jsonConfig) }
         install(HttpTimeout) {
-            requestTimeoutMillis = 180_000
-            connectTimeoutMillis = 30_000
-            socketTimeoutMillis = 180_000
+            requestTimeoutMillis = 300_000L
+            connectTimeoutMillis = 90_000L
+            socketTimeoutMillis = 300_000L
         }
         install(Logging) {
             logger = object : Logger {
@@ -64,7 +64,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         Tool(
             function = FunctionDef(
                 name = "search_keyword",
-                description = "全局搜索：在整个项目中搜索代码关键字。返回文件路径列表。",
+                description = "全局搜索：在整个项目中搜索代码关键字。返回带行号的文件匹配片段。",
                 parameters = buildJsonObject {
                     put("type", "object")
                     putJsonObject("properties") {
@@ -90,29 +90,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         Tool(
             function = FunctionDef(
                 name = "read_file",
-                description = "阅读源码：读取指定路径的文件完整内容。",
+                description = "阅读源码：读取文件片段。⚠️ 注意：你必须指定 start_line 和 end_line，单次最多允许读取 300 行！",
                 parameters = buildJsonObject {
                     put("type", "object")
                     putJsonObject("properties") {
                         putJsonObject("path") { put("type", "string") }
+                        putJsonObject("start_line") { 
+                            put("type", "integer")
+                            put("description", JsonPrimitive("起始行号 (从1开始)")) 
+                        }
+                        putJsonObject("end_line") { 
+                            put("type", "integer")
+                            put("description", JsonPrimitive("结束行号 (最大不要超过起始行+300)")) 
+                        }
                     }
-                    putJsonArray("required") { add(JsonPrimitive("path")) }
+                    putJsonArray("required") { 
+                        add(JsonPrimitive("path")) 
+                        add(JsonPrimitive("start_line")) 
+                        add(JsonPrimitive("end_line")) 
+                    }
                 }
             )
         ),
+        // 🔥 全新升级的防爆手术刀机制！
         Tool(
             function = FunctionDef(
                 name = "apply_patch",
-                description = "提交修改：将修改后的新代码应用到文件。会生成 Diff 供用户确认。",
+                description = "局部修改代码：用 replace_string 精确替换文件中的 search_string。",
                 parameters = buildJsonObject {
                     put("type", "object")
                     putJsonObject("properties") {
                         putJsonObject("path") { put("type", "string") }
-                        putJsonObject("new_content") { put("type", "string") }
+                        putJsonObject("search_string") { 
+                            put("type", "string") 
+                            put("description", JsonPrimitive("需要被替换的原文片段（必须与源码完全一致，包含完整缩进）")) 
+                        }
+                        putJsonObject("replace_string") { 
+                            put("type", "string") 
+                            put("description", JsonPrimitive("修改后的新代码片段")) 
+                        }
                     }
                     putJsonArray("required") { 
-                        add(JsonPrimitive("path"))
-                        add(JsonPrimitive("new_content")) 
+                        add(JsonPrimitive("path")) 
+                        add(JsonPrimitive("search_string")) 
+                        add(JsonPrimitive("replace_string")) 
                     }
                 }
             )
@@ -120,34 +141,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     init {
+        val savedHistory = repository.loadChatHistory()
         _uiState.update { 
             it.copy(
                 apiKey = repository.getApiKey(),
                 selectedModel = repository.getSelectedModel(),
-                enableThinking = repository.isThinkingEnabled()
+                enableThinking = repository.isThinkingEnabled(),
+                chatMessages = savedHistory
             ) 
         }
-        AppLog.d("MainViewModel 初始化完成, thinking=${_uiState.value.enableThinking}")
+        AppLog.d("MainViewModel 初始化完成, 恢复了 ${savedHistory.size} 条历史记忆")
+    }
+
+    fun clearChat() {
+        _uiState.update { it.copy(chatMessages = emptyList()) }
+        viewModelScope.launch(Dispatchers.IO) { repository.clearChatHistory() }
     }
 
     fun saveConfig(key: String, model: String) {
         repository.saveApiKey(key)
         repository.saveSelectedModel(model)
         _uiState.update { it.copy(apiKey = key, selectedModel = model) }
-        AppLog.d("保存配置: model=$model")
     }
 
     fun saveThinkingEnabled(enabled: Boolean) {
         repository.saveThinkingEnabled(enabled)
         _uiState.update { it.copy(enableThinking = enabled) }
-        AppLog.d("思考模式: ${if(enabled) "开启" else "关闭"}")
     }
 
     fun initWorkspace(uri: Uri) {
         repository.takePersistableUriPermission(uri)
         _uiState.update { it.copy(directoryStack = listOf(uri)) }
         loadDirectory(uri)
-        AppLog.d("初始化工作目录: $uri")
     }
 
     fun navigateIntoFolder(uri: Uri) {
@@ -186,11 +211,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ======================== 核心 AI 逻辑 ========================
-
     fun sendChatMessage(userText: String) {
         val state = _uiState.value
-        AppLog.d("发送消息: $userText")
         
         if (state.apiKey.isBlank()) {
             appendMessage(ChatMessage("assistant", "❌ 请先在设置中配置 API Key", isLoading = false))
@@ -209,7 +231,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.update { it.copy(isAgentWorking = true) }
 
-            val systemPrompt = "你是一个拥有上帝视角的顶级 Android 架构师 Agent。必须通过工具搜索、阅读，最后修改。"
+            // 🔥 注入全新手术刀认知
+            val systemPrompt = """
+                你是一个拥有上帝视角的顶级 Android 架构师 Agent。
+                【最高红线警告】：
+                1. 找代码必须直接使用 search_keyword 全局搜索特征词。
+                2. 使用 read_file 读取文件时，必须强制使用 start_line 和 end_line 翻页阅读！
+                3. 修改代码时，必须使用 apply_patch 工具！【极其重要】：apply_patch 采用精确匹配替换。你必须在 search_string 中提供与原文完全一致的代码块（包含所有的换行和缩进），然后在 replace_string 中提供新代码。
+                4. 除非明确要求长篇解释，否则回复必须【极度简明扼要】，直击痛点。
+            """.trimIndent()
+            
             val messages = mutableListOf(
                 ApiMessage("system", systemPrompt),
                 ApiMessage("user", userText)
@@ -218,15 +249,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             var iteration = 0
             var currentMessages = messages
-            var consecutiveToolOnlyIterations = 0   // 记录连续只有工具调用无文本的迭代次数
+            var consecutiveToolOnlyIterations = 0   
 
-            AppLog.d("开始 AI 循环, model=${state.selectedModel}, thinking=${state.enableThinking}")
-
-            while (iteration < 10 && consecutiveToolOnlyIterations < 3) {   // 最多连续3次纯工具调用
+            while (iteration < 20 && consecutiveToolOnlyIterations < 10) {
                 iteration++
-                AppLog.d("--- 迭代 $iteration ---")
                 
-                // 添加一个空的占位消息（正在思考）
                 appendMessage(ChatMessage("assistant", "", isLoading = true))
 
                 var accumulatedText = ""
@@ -249,7 +276,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             hasReceivedContent = true
                             accumulatedText += event.text
                             updateLastMessage(accumulatedText, isLoading = true, uploadChars = currentChars)
-                            AppLog.d("收到 content: ${event.text.take(20)}...")
                         }
                         is StreamEvent.ToolCallStarted -> {
                             val tip = "🤖 调用工具: ${event.functionName} ..."
@@ -259,11 +285,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 accumulatedText += if (accumulatedText.isNotEmpty()) "\n\n$tip" else tip
                                 updateLastMessage(accumulatedText, isLoading = true, uploadChars = currentChars)
                             }
-                            AppLog.d("工具调用开始: ${event.functionName}")
                         }
                         is StreamEvent.ToolCallComplete -> {
                             toolCallsBuffer.add(
                                 ToolCall(
+                                    index = toolCallsBuffer.size,
                                     id = event.toolCallId,
                                     function = FunctionCall(
                                         name = event.functionName,
@@ -271,15 +297,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     )
                                 )
                             )
-                            AppLog.d("工具调用完成: ${event.functionName}, 参数长度=${event.arguments.length}")
                         }
                         is StreamEvent.Done -> {
                             finalUsage = event.usage
-                            AppLog.d("流结束, usage=${event.usage}")
                         }
                         is StreamEvent.Error -> {
                             errorOccurred = true
-                            AppLog.e("API 错误事件: ${event.message}")
                             updateLastMessage("❌ API 错误: ${event.message}", isLoading = false, uploadChars = currentChars)
                             _uiState.update { it.copy(isAgentWorking = false) }
                         }
@@ -288,23 +311,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 if (errorOccurred) return@launch
 
-                // 处理空回复
-                if (!hasReceivedContent && toolCallsBuffer.isEmpty() && accumulatedText.isBlank()) {
-                    AppLog.w("未收到任何 content 且无工具调用")
-                    accumulatedText = "（AI 没有返回任何文本，可能是网络问题或模型暂时不可用。请重试或更换模型。）"
-                } else if (toolCallsBuffer.isNotEmpty() && accumulatedText.isBlank()) {
-                    AppLog.d("只有工具调用，无文本回复")
-                    consecutiveToolOnlyIterations++
-                    accumulatedText = ""   // 保持为空，让最终回复不显示额外内容
-                } else {
-                    consecutiveToolOnlyIterations = 0   // 有文本回复，重置计数
+                if (accumulatedText.isNotBlank()) {
+                    AppLog.d("🤖 AI 本轮回复内容:\n$accumulatedText")
+                }
+                if (toolCallsBuffer.isNotEmpty()) {
+                    AppLog.d("🛠️ AI 本轮准备调用 ${toolCallsBuffer.size} 个工具: ${toolCallsBuffer.joinToString { it.function.name ?: "" }}")
                 }
 
-                // 更新 UI 消息（如果有文本）
+                if (!hasReceivedContent && toolCallsBuffer.isEmpty() && accumulatedText.isBlank()) {
+                    accumulatedText = "（AI 没有返回任何文本...）"
+                } else if (toolCallsBuffer.isNotEmpty() && accumulatedText.isBlank()) {
+                    consecutiveToolOnlyIterations++
+                    accumulatedText = ""   
+                } else {
+                    consecutiveToolOnlyIterations = 0   
+                }
+
                 if (accumulatedText.isNotBlank()) {
                     updateLastMessage(accumulatedText, isLoading = false, uploadChars = currentChars)
                 } else {
-                    // 如果没有文本，移除占位消息，避免显示空白
                     _uiState.update { state ->
                         val msgs = state.chatMessages.toMutableList()
                         if (msgs.isNotEmpty() && msgs.last().content.isBlank()) {
@@ -318,22 +343,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     updateLastMessageUsage(usage.promptTokens, usage.completionTokens)
                 }
 
-                // 构建 assistant 消息
                 val assistantApiMsg = ApiMessage(
                     role = "assistant",
                     content = if (toolCallsBuffer.isNotEmpty()) null else accumulatedText.takeIf { it.isNotBlank() },
                     toolCalls = toolCallsBuffer.takeIf { it.isNotEmpty() },
                     reasoningContent = null
                 )
-                AppLog.d("Assistant msg: content=${assistantApiMsg.content}, toolCalls=${assistantApiMsg.toolCalls?.size}")
                 currentMessages.add(assistantApiMsg)
 
-                if (toolCallsBuffer.isEmpty()) {
-                    AppLog.d("无工具调用，结束循环")
-                    break
-                }
+                if (toolCallsBuffer.isEmpty()) break
 
-                // 执行工具调用
                 var allToolsSucceeded = true
                 for (toolCall in toolCallsBuffer) {
                     val result = executeTool(
@@ -347,130 +366,137 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         content = result,
                         name = toolCall.function.name
                     )
-                    AppLog.d("Tool msg: role=${toolResultMsg.role}, toolCallId=${toolResultMsg.toolCallId}, name=${toolResultMsg.name}")
                     currentMessages.add(toolResultMsg)
                     currentChars += result.length
                     if (result.startsWith("工具执行异常") || result.startsWith("错误")) {
                         allToolsSucceeded = false
                     }
-                    // 在 UI 中插入一条系统提示（可选）
                     appendMessage(ChatMessage("assistant", "📦 工具 `${toolCall.function.name}` 返回结果，继续分析...", isLoading = false))
                 }
 
-                // 如果工具执行全部失败，强制中断循环给出提示
                 if (!allToolsSucceeded) {
-                    appendMessage(ChatMessage("assistant", "⚠️ 工具调用失败，无法继续分析。请检查项目权限或手动提供信息。", isLoading = false))
+                    appendMessage(ChatMessage("assistant", "⚠️ 工具调用失败，无法继续分析。", isLoading = false))
                     break
                 }
             }
 
             _uiState.update { it.copy(isAgentWorking = false) }
-            if (iteration >= 10) {
-                appendMessage(ChatMessage("assistant", "⚠️ 工具调用超过限制，已停止。请尝试更具体的指令。", isLoading = false))
-                AppLog.w("达到最大迭代次数 10")
-            } else if (consecutiveToolOnlyIterations >= 3) {
-                appendMessage(ChatMessage("assistant", "⚠️ 连续多次只有工具调用而无回复，已自动停止。请尝试更具体的指令。", isLoading = false))
-                AppLog.w("连续纯工具调用超过3次，已停止")
+            
+            if (iteration >= 20) {
+                appendMessage(ChatMessage("assistant", "⚠️ 工具调用超过限制（20次），已停止。", isLoading = false))
+            } else if (consecutiveToolOnlyIterations >= 10) {
+                appendMessage(ChatMessage("assistant", "⚠️ 连续10次只搜索未说话，被系统打断。", isLoading = false))
             }
         }
     }
 
     private suspend fun executeTool(name: String, args: String, rootUri: Uri): String {
-    AppLog.d("执行工具: $name, args=$args")
-    
-    // 预处理参数：如果包含多个 JSON 对象拼接（如 {"a":1}{"b":2}），只取第一个完整的对象
-    val cleanedArgs = run {
-        var cleaned = args.trim()
-        // 尝试找到第一个完整的 JSON 对象结束位置（简单的栈计数）
-        if (cleaned.startsWith('{')) {
-            var braceCount = 0
-            var endIndex = -1
-            for (i in cleaned.indices) {
-                when (cleaned[i]) {
-                    '{' -> braceCount++
-                    '}' -> {
-                        braceCount--
-                        if (braceCount == 0) {
-                            endIndex = i
-                            break
+        val cleanedArgs = run {
+            var cleaned = args.trim()
+            if (cleaned.startsWith('{')) {
+                var braceCount = 0
+                var endIndex = -1
+                for (i in cleaned.indices) {
+                    when (cleaned[i]) {
+                        '{' -> braceCount++
+                        '}' -> {
+                            braceCount--
+                            if (braceCount == 0) {
+                                endIndex = i
+                                break
+                            }
                         }
                     }
                 }
-            }
-            if (endIndex > 0 && endIndex < cleaned.length - 1) {
-                val firstObject = cleaned.substring(0, endIndex + 1)
-                val remaining = cleaned.substring(endIndex + 1).trim()
-                if (remaining.isNotEmpty()) {
-                    AppLog.w("参数包含多余内容，已截取第一个对象: $firstObject (剩余: $remaining)")
-                }
-                firstObject
-            } else {
-                cleaned
-            }
-        } else {
-            cleaned
+                if (endIndex > 0 && endIndex < cleaned.length - 1) cleaned.substring(0, endIndex + 1)
+                else cleaned
+            } else cleaned
         }
-    }
-    
-    val jsonElement = runCatching {
-        toolParser.parseToJsonElement(cleanedArgs)
-    }.getOrElse { error ->
-        AppLog.e("参数解析失败: ${error.message}, args=$args")
-        return "工具执行异常: 参数格式错误 - ${error.message}\n原始参数: $args"
-    }
-    
-    return try {
-        val argObj = jsonElement.jsonObject
-        when (name) {
-            "search_keyword" -> {
-                val keyword = argObj["keyword"]?.jsonPrimitive?.content ?: ""
-                repository.searchKeyword(rootUri, keyword)
-            }
-            "list_directory" -> {
-                val path = argObj["path"]?.jsonPrimitive?.content ?: ""
-                repository.listDirectoryRelative(rootUri, path)
-            }
-            "read_file" -> {
-                val path = argObj["path"]?.jsonPrimitive?.content ?: ""
-                val fileUri = repository.findFileByRelativePath(rootUri, path)
-                if (fileUri != null) repository.readFileContent(fileUri) else "错误：找不到 $path"
-            }
-            "apply_patch" -> {
-                val path = argObj["path"]?.jsonPrimitive?.content ?: ""
-                val newContent = argObj["new_content"]?.jsonPrimitive?.content ?: ""
-                val targetUri = repository.findFileByRelativePath(rootUri, path)
-                if (targetUri != null) {
-                    val original = repository.readFileContent(targetUri)
-                    val originalLines = original.split("\n")
-                    val newLines = newContent.split("\n")
-                    val patch = DiffUtils.diff(originalLines, newLines)
-                    val diffLines = UnifiedDiffUtils.generateUnifiedDiff(path, path, originalLines, patch, 3)
-                    val diffText = diffLines.joinToString("\n")
-                    _uiState.update { 
-                        it.copy(
-                            pendingPatch = PatchProposal(targetUri, path, original, diffText.ifBlank { "逻辑重构，字符无变化" }, newContent),
-                            isAgentWorking = false 
-                        ) 
+        
+        val jsonElement = runCatching {
+            toolParser.parseToJsonElement(cleanedArgs)
+        }.getOrElse { error ->
+            return "工具执行异常: 参数格式错误 - ${error.message}\n原始参数: $args"
+        }
+        
+        return try {
+            val argObj = jsonElement.jsonObject
+            when (name) {
+                "search_keyword" -> {
+                    val keyword = argObj["keyword"]?.jsonPrimitive?.content ?: ""
+                    repository.searchKeyword(rootUri, keyword)
+                }
+                "list_directory" -> {
+                    val path = argObj["path"]?.jsonPrimitive?.content ?: ""
+                    repository.listDirectoryRelative(rootUri, path)
+                }
+                "read_file" -> {
+                    val path = argObj["path"]?.jsonPrimitive?.content ?: ""
+                    val startLine = argObj["start_line"]?.jsonPrimitive?.intOrNull
+                    val endLine = argObj["end_line"]?.jsonPrimitive?.intOrNull
+                    val fileUri = repository.findFileByRelativePath(rootUri, path)
+                    if (fileUri != null) repository.readFileContent(fileUri, startLine, endLine) else "错误：找不到 $path"
+                }
+                // 🔥 全新执行逻辑：绕开限制全量读取 -> 执行精确替换 -> 生成 Diff
+                "apply_patch" -> {
+                    val path = argObj["path"]?.jsonPrimitive?.content ?: ""
+                    val searchString = argObj["search_string"]?.jsonPrimitive?.content ?: ""
+                    val replaceString = argObj["replace_string"]?.jsonPrimitive?.content ?: ""
+                    
+                    val targetUri = repository.findFileByRelativePath(rootUri, path)
+                    if (targetUri != null) {
+                        // 越过 300 行防爆墙，使用底层 API 读取全量原始文件用于内存替换
+                        val original = getApplication<Application>().contentResolver
+                            .openInputStream(targetUri)?.bufferedReader()?.use { it.readText() } ?: ""
+                            
+                        if (original.contains(searchString)) {
+                            val newContent = original.replace(searchString, replaceString)
+                            
+                            val cleanOriginalLines = original.lines()
+                            val newLines = newContent.lines()
+                            val patch = DiffUtils.diff(cleanOriginalLines, newLines)
+                            val diffLines = UnifiedDiffUtils.generateUnifiedDiff(path, path, cleanOriginalLines, patch, 3)
+                            val diffText = diffLines.joinToString("\n")
+                            
+                            _uiState.update { 
+                                it.copy(
+                                    pendingPatch = PatchProposal(targetUri, path, original, diffText.ifBlank { "逻辑重构，无变化" }, newContent),
+                                    isAgentWorking = false 
+                                ) 
+                            }
+                            "已生成预览，等待用户确认"
+                        } else {
+                            "错误：找不到匹配的 search_string。请严格复制原文片段（注意缩进和空行）。"
+                        }
+                    } else {
+                        "错误：找不到文件 $path"
                     }
-                    "已生成预览，等待用户确认"
-                } else {
-                    "错误：找不到文件 $path"
                 }
+                else -> "未知工具: $name"
             }
-            else -> "未知工具: $name"
+        } catch (e: Exception) {
+            "工具执行异常: ${e.localizedMessage}"
         }
-    } catch (e: Exception) {
-        AppLog.e("工具执行异常: ${e.message}")
-        "工具执行异常: ${e.localizedMessage}"
     }
-}
-
-    // ======================== UI 辅助 ========================
 
     private fun appendMessage(msg: ChatMessage) {
+        _uiState.update { state -> state.copy(chatMessages = state.chatMessages + msg) }
+        viewModelScope.launch(Dispatchers.IO) { repository.saveChatHistory(_uiState.value.chatMessages) }
+    }
+
+    // 🔥 AI 刚才试图给你写的删除消息功能，保留在此！
+    fun deleteMessage(index: Int) {
         _uiState.update { state ->
-            state.copy(chatMessages = state.chatMessages + msg)
+            val msgs = state.chatMessages.toMutableList()
+            // 限定只能删除用户自己的消息（日志不让删）
+            if (index in msgs.indices && msgs[index].role == "user") {
+                msgs.removeAt(index)
+                state.copy(chatMessages = msgs)
+            } else {
+                state
+            }
         }
+        viewModelScope.launch(Dispatchers.IO) { repository.saveChatHistory(_uiState.value.chatMessages) }
     }
 
     private fun updateLastMessage(text: String, isLoading: Boolean, uploadChars: Int) {
@@ -481,6 +507,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 msgs[msgs.lastIndex] = last.copy(content = text, isLoading = isLoading, uploadChars = uploadChars)
             }
             state.copy(chatMessages = msgs)
+        }
+        if (!isLoading) {
+            viewModelScope.launch(Dispatchers.IO) { repository.saveChatHistory(_uiState.value.chatMessages) }
         }
     }
 
@@ -493,6 +522,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             state.copy(chatMessages = msgs)
         }
+        viewModelScope.launch(Dispatchers.IO) { repository.saveChatHistory(_uiState.value.chatMessages) }
     }
 
     fun confirmPatch() {

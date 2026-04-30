@@ -1,9 +1,11 @@
 package com.xixin.codent.data.model
 
+import kotlinx.serialization.Serializable
 /**
  * 聊天消息的数据模型
  * 包含了流式加载状态以及 Token 账单信息
  */
+ @Serializable
 data class ChatMessage(
     val role: String,
     val content: String,
