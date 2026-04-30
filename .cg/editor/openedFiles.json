@@ -14,8 +14,98 @@
           "line": 0
         }
       }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/data/repository/SafRepository.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 2267,
+          "line": 61
+        },
+        "start": {
+          "column": 1,
+          "index": 2267,
+          "line": 61
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/data/api/AiApiService.kt",
+      "selection": {
+        "end": {
+          "column": 23,
+          "index": 58,
+          "line": 2
+        },
+        "start": {
+          "column": 23,
+          "index": 58,
+          "line": 2
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/main/MainScreen.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 4514,
+          "line": 115
+        },
+        "start": {
+          "column": 1,
+          "index": 4514,
+          "line": 115
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/explorer/ExplorerPanel.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 4446,
+          "line": 100
+        },
+        "start": {
+          "column": 1,
+          "index": 4446,
+          "line": 100
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/editor/EditorPanel.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 1956,
+          "line": 53
+        },
+        "start": {
+          "column": 1,
+          "index": 1956,
+          "line": 53
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/chat/AgentChatPanel.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 4985,
+          "line": 129
+        },
+        "start": {
+          "column": 1,
+          "index": 4985,
+          "line": 129
+        }
+      }
     }
   ],
   "projectPath": "/storage/emulated/0/CodeOnTheGoProjects/Codent",
-  "selectedFile": "/storage/emulated/0/CodeOnTheGoProjects/Codent/settings.gradle.kts"
+  "selectedFile": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/explorer/ExplorerPanel.kt"
 }
