@@ -21,10 +21,13 @@ import androidx.compose.ui.unit.dp
 fun SettingsPanel(
     apiKey: String,
     currentModel: String,
-    onSaveConfig: (String, String) -> Unit
+    enableThinking: Boolean,
+    onSaveConfig: (String, String) -> Unit,
+    onSaveThinking: (Boolean) -> Unit
 ) {
     var inputKey by remember { mutableStateOf(apiKey) }
     var selectedModel by remember { mutableStateOf(if(currentModel.isBlank()) "deepseek-v4-flash" else currentModel) }
+    var thinkingEnabled by remember { mutableStateOf(enableThinking) }
     var passwordVisible by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
 
@@ -62,10 +65,9 @@ fun SettingsPanel(
                     Text("模型选择", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.height(8.dp))
                     
-                    // 模型选择的单选组
                     val models = listOf(
-                        "deepseek-v4-flash" to "Flash (速度快/测试首选)",
-                        "deepseek-v4-pro" to "Pro (深度思考/复杂架构)"
+                        "deepseek-v4-flash" to "DeepSeek V4 Flash (轻量/快速)",
+                        "deepseek-v4-pro" to "DeepSeek V4 Pro (旗舰/深度推理)"
                     )
                     
                     models.forEach { (modelId, desc) ->
@@ -79,6 +81,33 @@ fun SettingsPanel(
                             )
                             Text(text = desc, style = MaterialTheme.typography.bodyMedium)
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("🧠 深度思考模式", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "启用后模型会先推理再回答，效果更好但速度稍慢",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = thinkingEnabled,
+                            onCheckedChange = {
+                                thinkingEnabled = it
+                                onSaveThinking(it)
+                                haptic.performHapticFeedback(HapticFeedbackType.ToggleOn)
+                            }
+                        )
                     }
                     
                     Spacer(modifier = Modifier.height(24.dp))

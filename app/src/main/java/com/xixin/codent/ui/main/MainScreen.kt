@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xixin.codent.wrapper.log.DebugFloatingConsole
 import com.xixin.codent.ui.chat.ChatPanel
 import com.xixin.codent.ui.editor.EditorPanel
 import com.xixin.codent.ui.explorer.ExplorerPanel
@@ -101,9 +102,14 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 WorkspaceTab.SETTINGS -> SettingsPanel(
                     apiKey = uiState.apiKey,
                     currentModel = uiState.selectedModel,
-                    onSaveConfig = { key, model -> viewModel.saveConfig(key, model) }
+                    enableThinking = uiState.enableThinking,
+                    onSaveConfig = { key, model -> viewModel.saveConfig(key, model) },
+                    onSaveThinking = { enabled -> viewModel.saveThinkingEnabled(enabled) }
                 )
             }
         }
     }
+
+    // 浮动日志面板（总是在最上层）
+    
 }

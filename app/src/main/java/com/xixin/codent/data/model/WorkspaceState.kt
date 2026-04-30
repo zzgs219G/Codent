@@ -2,18 +2,14 @@ package com.xixin.codent.data.model
 
 import android.net.Uri
 
-// 用于存放 AI 提议的补丁修改
 data class PatchProposal(
     val targetFileUri: Uri,
     val targetFileName: String,
     val originalContent: String,
-    val diffString: String,      // 真正包含 +/- 的 Unified Diff 字符串
+    val diffString: String,
     val proposedContent: String 
 )
 
-/**
- * 唯一的真理之源 (Single Source of Truth)
- */
 data class WorkspaceState(
     val directoryStack: List<Uri> = emptyList(),
     val currentFiles: List<FileNode> = emptyList(),
@@ -27,6 +23,7 @@ data class WorkspaceState(
     
     val apiKey: String = "",
     val selectedModel: String = "deepseek-v4-flash",
+    val enableThinking: Boolean = true,
     
     val pendingPatch: PatchProposal? = null,
     val isAgentWorking: Boolean = false 
