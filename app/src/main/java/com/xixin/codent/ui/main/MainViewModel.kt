@@ -1,27 +1,54 @@
-// [新建] 负责管理核心的逻辑交互 (MVVM)
 package com.xixin.codent.ui.main
 
 import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.xixin.codent.data.api.AiApiService
 import com.xixin.codent.data.model.ChatMessage
 import com.xixin.codent.data.model.FileNode
 import com.xixin.codent.data.model.WorkspaceState
 import com.xixin.codent.data.repository.SafRepository
-import kotlinx.coroutines.delay
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     
     private val repository = SafRepository(application)
     
+    // 关键升级：深度思考模型通常需要 30~90 秒才会返回结果
+    private val httpClient = HttpClient(CIO) {
+        install(ContentNegotiation) {
+            json(Json { ignoreUnknownKeys = true; isLenient = true })
+        }
+        install(HttpTimeout) {
+            requestTimeoutMillis = 180_000 // 180秒总请求超时
+            connectTimeoutMillis = 15_000  // 15秒连接超时
+            socketTimeoutMillis = 180_000  // 180秒读写超时，给足 AI 思考的时间
+        }
+    }
+    private val aiService = AiApiService(httpClient)
+    
     private val _uiState = MutableStateFlow(WorkspaceState())
     val uiState: StateFlow<WorkspaceState> = _uiState.asStateFlow()
+
+    init {
+        _uiState.update { it.copy(apiKey = repository.getApiKey()) }
+    }
+
+    fun saveApiKey(key: String) {
+        repository.saveApiKey(key)
+        _uiState.update { it.copy(apiKey = key) }
+    }
 
     fun initWorkspace(uri: Uri) {
         repository.takePersistableUriPermission(uri)
@@ -49,9 +76,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun loadDirectory(uri: Uri) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isSafLoading = true) }
-            val files = repository.listFiles(uri)
-            _uiState.update { it.copy(currentFiles = files, isSafLoading = false) }
+            _uiState.update { it.copy(isSafLoading = true, currentFiles = emptyList()) }
+            repository.listFilesFlow(uri).collect { files ->
+                _uiState.update { it.copy(currentFiles = files, isSafLoading = false) }
+            }
         }
     }
 
@@ -61,7 +89,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 selectedFile = fileNode,
                 currentCodeContent = "正在加载代码，请稍候..."
             ) }
-            
             val content = repository.readFileContent(fileNode.uri)
             _uiState.update { it.copy(currentCodeContent = content) }
             onOpenComplete()
@@ -69,23 +96,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun sendChatMessage(userText: String) {
+        val currentState = _uiState.value
         val userMsg = ChatMessage("user", userText)
         val loadingMsg = ChatMessage("assistant", "", isLoading = true)
         
-        _uiState.update { state ->
-            state.copy(chatMessages = state.chatMessages + userMsg + loadingMsg)
-        }
+        _uiState.update { it.copy(chatMessages = it.chatMessages + userMsg + loadingMsg) }
 
         viewModelScope.launch {
-            delay(1200)
-            val targetFile = _uiState.value.selectedFile?.name ?: "全局项目"
-            val aiResponse = ChatMessage(
-                role = "assistant",
-                content = "已收到关于 [ $targetFile ] 的任务：\n$userText\n\n(系统升级完毕，等待 Ktor 接入...)"
+            val contextFile = currentState.selectedFile?.name ?: "无上下文"
+            val systemPrompt = "你是一个 Android AI 编程助手。当前用户正在查看文件: $contextFile。\n代码内容:\n${currentState.currentCodeContent.take(2000)}"
+            
+            val responseText = aiService.getCompletion(
+                apiKey = currentState.apiKey,
+                prompt = userText,
+                systemPrompt = systemPrompt
             )
             
+            val aiMsg = ChatMessage(role = "assistant", content = responseText)
             _uiState.update { state ->
-                val newMessages = state.chatMessages.dropLast(1) + aiResponse
+                val newMessages = state.chatMessages.dropLast(1) + aiMsg
                 state.copy(chatMessages = newMessages)
             }
         }
