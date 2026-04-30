@@ -98,7 +98,10 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     onSendMessage = { viewModel.sendChatMessage(it) },
                     onConfirmPatch = { viewModel.confirmPatch() },
                     onRejectPatch = { viewModel.rejectPatch() },
-                    onDeleteMessage = { index -> viewModel.deleteMessage(index) }
+                    onDeleteMessage = { index ->
+                        if (index == -1) viewModel.clearChat()
+                        else viewModel.deleteMessage(index)
+                    }
                 )
                 WorkspaceTab.SETTINGS -> SettingsPanel(
                     apiKey = uiState.apiKey,

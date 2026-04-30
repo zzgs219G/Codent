@@ -29,6 +29,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = SafRepository(application)
     
+    private val _patchQueue = mutableListOf<PatchProposal>()
+    
     private val jsonConfig = Json { 
         ignoreUnknownKeys = true 
         isLenient = true 
@@ -64,7 +66,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         Tool(
             function = FunctionDef(
                 name = "search_keyword",
-                description = "全局搜索：在整个项目中搜索代码关键字。返回带行号的文件匹配片段。",
+                description = "全局搜索代码关键字。返回带行号的文件匹配片段。",
                 parameters = buildJsonObject {
                     put("type", "object")
                     putJsonObject("properties") {
@@ -77,7 +79,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         Tool(
             function = FunctionDef(
                 name = "list_directory",
-                description = "目录浏览器：列出指定目录下的内容。根目录传 ''。",
+                description = "列出指定目录下的内容。根目录传 ''。",
                 parameters = buildJsonObject {
                     put("type", "object")
                     putJsonObject("properties") {
@@ -90,19 +92,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         Tool(
             function = FunctionDef(
                 name = "read_file",
-                description = "阅读源码：读取文件片段。⚠️ 注意：你必须指定 start_line 和 end_line，单次最多允许读取 300 行！",
+                description = "读取文件片段。必须指定 start_line 和 end_line，单次最多300行！",
                 parameters = buildJsonObject {
                     put("type", "object")
                     putJsonObject("properties") {
                         putJsonObject("path") { put("type", "string") }
-                        putJsonObject("start_line") { 
-                            put("type", "integer")
-                            put("description", JsonPrimitive("起始行号 (从1开始)")) 
-                        }
-                        putJsonObject("end_line") { 
-                            put("type", "integer")
-                            put("description", JsonPrimitive("结束行号 (最大不要超过起始行+300)")) 
-                        }
+                        putJsonObject("start_line") { put("type", "integer") }
+                        putJsonObject("end_line") { put("type", "integer") }
                     }
                     putJsonArray("required") { 
                         add(JsonPrimitive("path")) 
@@ -112,23 +108,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             )
         ),
-        // 🔥 全新升级的防爆手术刀机制！
         Tool(
             function = FunctionDef(
                 name = "apply_patch",
-                description = "局部修改代码：用 replace_string 精确替换文件中的 search_string。",
+                description = "局部修改代码：用 replace_string 精确替换 search_string。",
                 parameters = buildJsonObject {
                     put("type", "object")
                     putJsonObject("properties") {
                         putJsonObject("path") { put("type", "string") }
-                        putJsonObject("search_string") { 
-                            put("type", "string") 
-                            put("description", JsonPrimitive("需要被替换的原文片段（必须与源码完全一致，包含完整缩进）")) 
-                        }
-                        putJsonObject("replace_string") { 
-                            put("type", "string") 
-                            put("description", JsonPrimitive("修改后的新代码片段")) 
-                        }
+                        putJsonObject("search_string") { put("type", "string") }
+                        putJsonObject("replace_string") { put("type", "string") }
                     }
                     putJsonArray("required") { 
                         add(JsonPrimitive("path")) 
@@ -215,7 +204,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val state = _uiState.value
         
         if (state.apiKey.isBlank()) {
-            appendMessage(ChatMessage("assistant", "❌ 请先在设置中配置 API Key", isLoading = false))
+            appendMessage(ChatMessage("assistant", "❌ 请先配置 API Key", isLoading = false))
             return
         }
 
@@ -224,21 +213,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val rootUri = state.directoryStack.firstOrNull()
         if (rootUri == null) {
-            appendMessage(ChatMessage("assistant", "❌ 请先选择一个项目根目录", isLoading = false))
+            appendMessage(ChatMessage("assistant", "❌ 请先选择项目根目录", isLoading = false))
             return
         }
 
         viewModelScope.launch {
             _uiState.update { it.copy(isAgentWorking = true) }
 
-            // 🔥 注入全新手术刀认知
+            // 🔥 提示词加入防挂起红线
             val systemPrompt = """
                 你是一个拥有上帝视角的顶级 Android 架构师 Agent。
                 【最高红线警告】：
-                1. 找代码必须直接使用 search_keyword 全局搜索特征词。
-                2. 使用 read_file 读取文件时，必须强制使用 start_line 和 end_line 翻页阅读！
-                3. 修改代码时，必须使用 apply_patch 工具！【极其重要】：apply_patch 采用精确匹配替换。你必须在 search_string 中提供与原文完全一致的代码块（包含所有的换行和缩进），然后在 replace_string 中提供新代码。
-                4. 除非明确要求长篇解释，否则回复必须【极度简明扼要】，直击痛点。
+                1. 找代码必须直接使用 search_keyword 全局搜索。单次读取 read_file 不超过 300 行。
+                2. 修改代码必须使用 apply_patch 工具，且 search_string 必须与原文完美匹配。
+                3. 【严禁连发补丁】：每一轮对话中，你【最多只能调用 1 次 apply_patch】！如果你需要修改多个地方或多个文件，你必须一次只提交一个，并在对话末尾告诉用户：“请先确认当前修改，确认后请告诉我继续”。绝不允许在一个思考循环里连续轰炸发起修改！
+                4. 请仅使用纯文本回复，禁止使用 **加粗** 等 Markdown 符号，代码一律用多行代码块。
             """.trimIndent()
             
             val messages = mutableListOf(
@@ -251,12 +240,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             var currentMessages = messages
             var consecutiveToolOnlyIterations = 0   
 
-            while (iteration < 20 && consecutiveToolOnlyIterations < 10) {
-                iteration++
-                
-                appendMessage(ChatMessage("assistant", "", isLoading = true))
+            var totalAccumulatedText = ""
+            var totalAccumulatedReasoning = ""
+            var totalPromptTokens = 0
+            var totalCompletionTokens = 0
 
-                var accumulatedText = ""
+            appendMessage(ChatMessage("assistant", "", isLoading = true))
+
+            while (iteration < 30 && consecutiveToolOnlyIterations < 15) {
+                iteration++
+
                 val toolCallsBuffer = mutableListOf<ToolCall>()
                 var finalUsage: Usage? = null
                 var errorOccurred = false
@@ -274,17 +267,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     when (event) {
                         is StreamEvent.Content -> {
                             hasReceivedContent = true
-                            accumulatedText += event.text
-                            updateLastMessage(accumulatedText, isLoading = true, uploadChars = currentChars)
+                            totalAccumulatedText += event.text
+                            updateLastMessage(totalAccumulatedText, totalAccumulatedReasoning, isLoading = true, uploadChars = currentChars)
+                        }
+                        is StreamEvent.Reasoning -> { 
+                            totalAccumulatedReasoning += event.text
+                            updateLastMessage(totalAccumulatedText, totalAccumulatedReasoning, isLoading = true, uploadChars = currentChars)
                         }
                         is StreamEvent.ToolCallStarted -> {
-                            val tip = "🤖 调用工具: ${event.functionName} ..."
-                            if (!hasReceivedContent && accumulatedText.isEmpty()) {
-                                updateLastMessage(tip, isLoading = true, uploadChars = currentChars)
-                            } else {
-                                accumulatedText += if (accumulatedText.isNotEmpty()) "\n\n$tip" else tip
-                                updateLastMessage(accumulatedText, isLoading = true, uploadChars = currentChars)
-                            }
+                            val tip = "> 🤖 正在调度工具: ${event.functionName} ..."
+                            totalAccumulatedReasoning += if (totalAccumulatedReasoning.isNotEmpty()) "\n\n$tip" else tip
+                            updateLastMessage(totalAccumulatedText, totalAccumulatedReasoning, isLoading = true, uploadChars = currentChars)
                         }
                         is StreamEvent.ToolCallComplete -> {
                             toolCallsBuffer.add(
@@ -303,7 +296,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                         is StreamEvent.Error -> {
                             errorOccurred = true
-                            updateLastMessage("❌ API 错误: ${event.message}", isLoading = false, uploadChars = currentChars)
+                            totalAccumulatedText += "\n❌ 网络异常或 API 报错: ${event.message}"
+                            updateLastMessage(totalAccumulatedText, totalAccumulatedReasoning, isLoading = false, uploadChars = currentChars)
                             _uiState.update { it.copy(isAgentWorking = false) }
                         }
                     }
@@ -311,41 +305,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 if (errorOccurred) return@launch
 
-                if (accumulatedText.isNotBlank()) {
-                    AppLog.d("🤖 AI 本轮回复内容:\n$accumulatedText")
-                }
-                if (toolCallsBuffer.isNotEmpty()) {
-                    AppLog.d("🛠️ AI 本轮准备调用 ${toolCallsBuffer.size} 个工具: ${toolCallsBuffer.joinToString { it.function.name ?: "" }}")
-                }
-
-                if (!hasReceivedContent && toolCallsBuffer.isEmpty() && accumulatedText.isBlank()) {
-                    accumulatedText = "（AI 没有返回任何文本...）"
-                } else if (toolCallsBuffer.isNotEmpty() && accumulatedText.isBlank()) {
+                if (!hasReceivedContent && toolCallsBuffer.isEmpty() && totalAccumulatedText.isBlank()) {
+                    totalAccumulatedText = "（等待分析中...）"
+                } else if (toolCallsBuffer.isNotEmpty() && !hasReceivedContent) {
                     consecutiveToolOnlyIterations++
-                    accumulatedText = ""   
                 } else {
                     consecutiveToolOnlyIterations = 0   
                 }
 
-                if (accumulatedText.isNotBlank()) {
-                    updateLastMessage(accumulatedText, isLoading = false, uploadChars = currentChars)
-                } else {
-                    _uiState.update { state ->
-                        val msgs = state.chatMessages.toMutableList()
-                        if (msgs.isNotEmpty() && msgs.last().content.isBlank()) {
-                            msgs.removeAt(msgs.lastIndex)
-                        }
-                        state.copy(chatMessages = msgs)
-                    }
-                }
-
                 finalUsage?.let { usage ->
-                    updateLastMessageUsage(usage.promptTokens, usage.completionTokens)
+                    totalPromptTokens += usage.promptTokens
+                    totalCompletionTokens += usage.completionTokens
+                    updateLastMessageUsage(totalPromptTokens, totalCompletionTokens)
                 }
 
                 val assistantApiMsg = ApiMessage(
                     role = "assistant",
-                    content = if (toolCallsBuffer.isNotEmpty()) null else accumulatedText.takeIf { it.isNotBlank() },
+                    content = if (toolCallsBuffer.isNotEmpty()) null else totalAccumulatedText.takeIf { it.isNotBlank() },
                     toolCalls = toolCallsBuffer.takeIf { it.isNotEmpty() },
                     reasoningContent = null
                 )
@@ -355,11 +331,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 var allToolsSucceeded = true
                 for (toolCall in toolCallsBuffer) {
-                    val result = executeTool(
-                        name = toolCall.function.name ?: "",
-                        args = toolCall.function.arguments ?: "",
-                        rootUri = rootUri
-                    )
+                    val funcName = toolCall.function.name ?: "unknown"
+                    val argsStr = toolCall.function.arguments ?: ""
+                    
+                    val displayArgs = try {
+                        val jsonObj = toolParser.parseToJsonElement(argsStr).jsonObject
+                        when (funcName) {
+                            "search_keyword" -> "🔍 搜索关键字: ${jsonObj["keyword"]?.jsonPrimitive?.content}"
+                            "list_directory" -> "📂 查看目录: ${jsonObj["path"]?.jsonPrimitive?.content}"
+                            "read_file" -> "📄 读取文件: ${jsonObj["path"]?.jsonPrimitive?.content}"
+                            "apply_patch" -> "✍️ 准备修改: ${jsonObj["path"]?.jsonPrimitive?.content}"
+                            else -> "执行指令中"
+                        }
+                    } catch (e: Exception) {
+                        "执行指令中"
+                    }
+
+                    totalAccumulatedReasoning += "\n> 🎯 调度参数: $displayArgs"
+                    updateLastMessage(totalAccumulatedText, totalAccumulatedReasoning, isLoading = true, uploadChars = currentChars)
+
+                    val result = executeTool(name = funcName, args = argsStr, rootUri = rootUri)
+                    
                     val toolResultMsg = ApiMessage(
                         role = "tool",
                         toolCallId = toolCall.id,
@@ -368,25 +360,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                     currentMessages.add(toolResultMsg)
                     currentChars += result.length
-                    if (result.startsWith("工具执行异常") || result.startsWith("错误")) {
-                        allToolsSucceeded = false
+                    
+                    val resultTip = if (result.length > 50) "> 📦 执行完毕，获取 ${result.length} 个字符" else "> 📦 工具返回: $result"
+                    totalAccumulatedReasoning += "\n$resultTip\n"
+                    updateLastMessage(totalAccumulatedText, totalAccumulatedReasoning, isLoading = true, uploadChars = currentChars)
+
+                    if (result.startsWith("⚠️ 系统强制拦截")) {
+                        allToolsSucceeded = false // 触发打断
                     }
-                    appendMessage(ChatMessage("assistant", "📦 工具 `${toolCall.function.name}` 返回结果，继续分析...", isLoading = false))
                 }
 
                 if (!allToolsSucceeded) {
-                    appendMessage(ChatMessage("assistant", "⚠️ 工具调用失败，无法继续分析。", isLoading = false))
-                    break
+                    break // 强制退出大循环，让 AI 开始正式回复
                 }
             }
 
+            updateLastMessage(totalAccumulatedText, totalAccumulatedReasoning, isLoading = false, uploadChars = currentChars)
             _uiState.update { it.copy(isAgentWorking = false) }
-            
-            if (iteration >= 20) {
-                appendMessage(ChatMessage("assistant", "⚠️ 工具调用超过限制（20次），已停止。", isLoading = false))
-            } else if (consecutiveToolOnlyIterations >= 10) {
-                appendMessage(ChatMessage("assistant", "⚠️ 连续10次只搜索未说话，被系统打断。", isLoading = false))
-            }
         }
     }
 
@@ -416,7 +406,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val jsonElement = runCatching {
             toolParser.parseToJsonElement(cleanedArgs)
         }.getOrElse { error ->
-            return "工具执行异常: 参数格式错误 - ${error.message}\n原始参数: $args"
+            return "⚠️ 工具执行异常: 参数格式错误"
         }
         
         return try {
@@ -437,20 +427,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val fileUri = repository.findFileByRelativePath(rootUri, path)
                     if (fileUri != null) repository.readFileContent(fileUri, startLine, endLine) else "错误：找不到 $path"
                 }
-                // 🔥 全新执行逻辑：绕开限制全量读取 -> 执行精确替换 -> 生成 Diff
                 "apply_patch" -> {
+                    // 🔥 终极防挂起锁：一轮对话绝对不允许 2 个补丁！
+                    if (_patchQueue.isNotEmpty() || _uiState.value.pendingPatch != null) {
+                        return "⚠️ 系统强制拦截：你已经提交了一个修改提议！为了防止代码冲突和系统超时，每次对话【只允许提交1个修改】！请立刻结束本轮工具调度，回复用户并等待用户在界面上点击确认！"
+                    }
+
                     val path = argObj["path"]?.jsonPrimitive?.content ?: ""
                     val searchString = argObj["search_string"]?.jsonPrimitive?.content ?: ""
                     val replaceString = argObj["replace_string"]?.jsonPrimitive?.content ?: ""
                     
                     val targetUri = repository.findFileByRelativePath(rootUri, path)
                     if (targetUri != null) {
-                        // 越过 300 行防爆墙，使用底层 API 读取全量原始文件用于内存替换
                         val original = getApplication<Application>().contentResolver
                             .openInputStream(targetUri)?.bufferedReader()?.use { it.readText() } ?: ""
                             
                         if (original.contains(searchString)) {
                             val newContent = original.replace(searchString, replaceString)
+                            
+                            // 🔥 防幻觉锁：确保真的有改变
+                            if (original == newContent) {
+                                return "⚠️ 错误：你提供的 replace_string 替换后，文件内容没有任何变化！请仔细检查你的替换逻辑。"
+                            }
                             
                             val cleanOriginalLines = original.lines()
                             val newLines = newContent.lines()
@@ -458,18 +456,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             val diffLines = UnifiedDiffUtils.generateUnifiedDiff(path, path, cleanOriginalLines, patch, 3)
                             val diffText = diffLines.joinToString("\n")
                             
-                            _uiState.update { 
-                                it.copy(
-                                    pendingPatch = PatchProposal(targetUri, path, original, diffText.ifBlank { "逻辑重构，无变化" }, newContent),
-                                    isAgentWorking = false 
-                                ) 
-                            }
-                            "已生成预览，等待用户确认"
+                            val proposal = PatchProposal(targetUri, path, original, diffText.ifBlank { "逻辑重构，无明显变化" }, newContent)
+                            
+                            _patchQueue.add(proposal)
+                            _uiState.update { it.copy(pendingPatch = proposal) }
+                            
+                            "✅ 补丁已成功生成并放入等待队列，请立刻结束执行并向用户汇报修改结果！"
                         } else {
-                            "错误：找不到匹配的 search_string。请严格复制原文片段（注意缩进和空行）。"
+                            "❌ 错误：找不到匹配的 search_string。请严格复制原文。"
                         }
                     } else {
-                        "错误：找不到文件 $path"
+                        "❌ 错误：找不到文件 $path"
                     }
                 }
                 else -> "未知工具: $name"
@@ -484,11 +481,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) { repository.saveChatHistory(_uiState.value.chatMessages) }
     }
 
-    // 🔥 AI 刚才试图给你写的删除消息功能，保留在此！
     fun deleteMessage(index: Int) {
         _uiState.update { state ->
             val msgs = state.chatMessages.toMutableList()
-            // 限定只能删除用户自己的消息（日志不让删）
             if (index in msgs.indices && msgs[index].role == "user") {
                 msgs.removeAt(index)
                 state.copy(chatMessages = msgs)
@@ -499,12 +494,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) { repository.saveChatHistory(_uiState.value.chatMessages) }
     }
 
-    private fun updateLastMessage(text: String, isLoading: Boolean, uploadChars: Int) {
+    private fun updateLastMessage(text: String, reasoning: String = "", isLoading: Boolean, uploadChars: Int) {
         _uiState.update { state ->
             val msgs = state.chatMessages.toMutableList()
             if (msgs.isNotEmpty()) {
                 val last = msgs.last()
-                msgs[msgs.lastIndex] = last.copy(content = text, isLoading = isLoading, uploadChars = uploadChars)
+                msgs[msgs.lastIndex] = last.copy(
+                    content = text, 
+                    reasoningContent = reasoning, 
+                    isLoading = isLoading, 
+                    uploadChars = uploadChars
+                )
             }
             state.copy(chatMessages = msgs)
         }
@@ -529,19 +529,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val patch = _uiState.value.pendingPatch ?: return
         viewModelScope.launch {
             if (repository.overwriteFile(patch.targetFileUri, patch.proposedContent)) {
-                appendMessage(ChatMessage("assistant", "✅ 修改已落盘：${patch.targetFileName}"))
+                appendMessage(ChatMessage("assistant", "✅ 成功修改：${patch.targetFileName}"))
                 if (_uiState.value.selectedFile?.uri == patch.targetFileUri) {
                     _uiState.update { it.copy(currentCodeContent = patch.proposedContent) }
                 }
             } else {
                 appendMessage(ChatMessage("assistant", "❌ 写入失败，请检查权限。"))
             }
-            _uiState.update { it.copy(pendingPatch = null, isAgentWorking = false) }
+            
+            _patchQueue.remove(patch)
+            _uiState.update { it.copy(pendingPatch = _patchQueue.firstOrNull()) }
         }
     }
 
     fun rejectPatch() {
-        appendMessage(ChatMessage("assistant", "🚫 修改已取消。"))
-        _uiState.update { it.copy(pendingPatch = null, isAgentWorking = false) }
+        val patch = _uiState.value.pendingPatch ?: return
+        appendMessage(ChatMessage("assistant", "🚫 已拒绝修改：${patch.targetFileName}"))
+        
+        _patchQueue.remove(patch)
+        _uiState.update { it.copy(pendingPatch = _patchQueue.firstOrNull()) }
     }
 }

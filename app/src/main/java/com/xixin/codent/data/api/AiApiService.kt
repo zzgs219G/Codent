@@ -28,7 +28,7 @@ data class FunctionDef(
 
 @Serializable
 data class ToolCall(
-    val index: Int = 0,               // 🔥 修复：用于区分并行的工具流
+    val index: Int = 0,               // 用于区分并行的工具流
     val id: String = "",
     val type: String = "function",
     val function: FunctionCall
@@ -41,10 +41,6 @@ data class FunctionCall(
 )
 
 // ============================== 2. 消息结构 ==============================
-/**
- * 标准消息（用于请求和普通响应）
- * ⚠️ 关键：增加 name 字段（tool 消息必须提供工具名）
- */
 @Serializable
 data class ApiMessage(
     val role: String,
@@ -55,9 +51,6 @@ data class ApiMessage(
     val name: String? = null          // tool 消息专用
 )
 
-/**
- * 流式 Delta 消息（无 role 字段）
- */
 @Serializable
 data class DeltaMessage(
     val role: String? = null,
@@ -98,6 +91,7 @@ data class Usage(
 // ============================== 4. 流式事件 ==============================
 sealed class StreamEvent {
     data class Content(val text: String) : StreamEvent()
+    data class Reasoning(val text: String) : StreamEvent() // 🔥 新增：独立思考事件
     data class ToolCallStarted(val functionName: String) : StreamEvent()
     data class ToolCallComplete(val toolCallId: String, val functionName: String, val arguments: String) : StreamEvent()
     data class Done(val usage: Usage?) : StreamEvent()
@@ -113,7 +107,6 @@ class AiApiService(private val client: HttpClient) {
         coerceInputValues = true
     }
 
-    // 🔥 修复：内部类用于追踪单个工具流的状态
     private class ToolCallTracker(
         var id: String = "", 
         var name: String = "", 
@@ -133,7 +126,7 @@ class AiApiService(private val client: HttpClient) {
             val thinkingParam = if (enableThinking) {
                 buildJsonObject { put("type", "enabled") }
             } else {
-                buildJsonObject { put("type", "disabled") }   // 明确禁用，而不是 null
+                buildJsonObject { put("type", "disabled") }
             }
             client.preparePost(baseUrl) {
                 header(HttpHeaders.Authorization, "Bearer $apiKey")
@@ -158,8 +151,6 @@ class AiApiService(private val client: HttpClient) {
                 AppLog.d("API 连接成功，开始读取流")
 
                 val channel = response.bodyAsChannel()
-                
-                // 🔥 修复：并行工具追踪映射表
                 val toolTrackers = mutableMapOf<Int, ToolCallTracker>()
 
                 while (!channel.isClosedForRead) {
@@ -176,10 +167,14 @@ class AiApiService(private val client: HttpClient) {
                         val choice = chunk.choices.firstOrNull() ?: continue
                         val delta = choice.delta
 
-                        val text = delta.content ?: delta.reasoningContent
-                        if (!text.isNullOrEmpty()) emit(StreamEvent.Content(text))
+                        // 🔥 修改：分离普通内容与思考内容
+                        if (!delta.reasoningContent.isNullOrEmpty()) {
+                            emit(StreamEvent.Reasoning(delta.reasoningContent))
+                        }
+                        if (!delta.content.isNullOrEmpty()) {
+                            emit(StreamEvent.Content(delta.content))
+                        }
 
-                        // 🔥 修复：并行累加 ToolCall（替代了之前的 firstOrNull() 单个累加）
                         delta.toolCalls?.forEach { tc ->
                             val tracker = toolTrackers.getOrPut(tc.index) { ToolCallTracker() }
                             
@@ -191,7 +186,6 @@ class AiApiService(private val client: HttpClient) {
                             tracker.args.append(tc.function.arguments)
                         }
 
-                        // 🔥 修复：结束时遍历所有 tracker 并发出所有的完整函数调用
                         if (choice.finishReason == "tool_calls") {
                             toolTrackers.values.forEach { tracker ->
                                 if (tracker.name.isNotEmpty()) {
