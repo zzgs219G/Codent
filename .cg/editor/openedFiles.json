@@ -1,21 +1,21 @@
 {
   "allFiles": [
     {
-      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent /app/src/main/java/com/xixin/codent/MainActivity.kt",
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/settings.gradle.kts",
       "selection": {
         "end": {
           "column": 0,
-          "index": 496,
-          "line": 13
+          "index": 0,
+          "line": 0
         },
         "start": {
           "column": 0,
-          "index": 496,
-          "line": 13
+          "index": 0,
+          "line": 0
         }
       }
     }
   ],
-  "projectPath": "/storage/emulated/0/CodeOnTheGoProjects/Codent ",
-  "selectedFile": "/storage/emulated/0/CodeOnTheGoProjects/Codent /app/src/main/java/com/xixin/codent/MainActivity.kt"
+  "projectPath": "/storage/emulated/0/CodeOnTheGoProjects/Codent",
+  "selectedFile": "/storage/emulated/0/CodeOnTheGoProjects/Codent/settings.gradle.kts"
 }
