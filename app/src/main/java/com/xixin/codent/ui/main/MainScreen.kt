@@ -29,7 +29,6 @@ enum class WorkspaceTab(val title: String, val icon: ImageVector) {
     SETTINGS("设置", Icons.Default.Settings)
 }
 
-// 修复点：添加了 ExperimentalLayoutApi::class 授权使用最新的键盘检测 API
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MainScreen(viewModel: MainViewModel = viewModel()) {
@@ -93,11 +92,16 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 )
                 WorkspaceTab.AGENT -> ChatPanel(
                     messages = uiState.chatMessages,
-                    onSendMessage = { viewModel.sendChatMessage(it) }
+                    isAgentWorking = uiState.isAgentWorking,
+                    pendingPatch = uiState.pendingPatch,
+                    onSendMessage = { viewModel.sendChatMessage(it) },
+                    onConfirmPatch = { viewModel.confirmPatch() },
+                    onRejectPatch = { viewModel.rejectPatch() }
                 )
                 WorkspaceTab.SETTINGS -> SettingsPanel(
                     apiKey = uiState.apiKey,
-                    onSaveApiKey = { viewModel.saveApiKey(it) }
+                    currentModel = uiState.selectedModel,
+                    onSaveConfig = { key, model -> viewModel.saveConfig(key, model) }
                 )
             }
         }

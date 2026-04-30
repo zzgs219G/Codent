@@ -20,9 +20,11 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun SettingsPanel(
     apiKey: String,
-    onSaveApiKey: (String) -> Unit
+    currentModel: String,
+    onSaveConfig: (String, String) -> Unit
 ) {
     var inputKey by remember { mutableStateOf(apiKey) }
+    var selectedModel by remember { mutableStateOf(if(currentModel.isBlank()) "deepseek-v4-flash" else currentModel) }
     var passwordVisible by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
 
@@ -43,15 +45,12 @@ fun SettingsPanel(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("AI 驱动核心 (DeepSeek)", style = MaterialTheme.typography.titleMedium)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Codent 代理需要大语言模型作为逻辑中枢。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     OutlinedTextField(
                         value = inputKey,
                         onValueChange = { inputKey = it },
-                        label = { Text("DeepSeek API Key") },
+                        label = { Text("API Key") },
                         leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
                         visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -59,12 +58,35 @@ fun SettingsPanel(
                         singleLine = true
                     )
                     
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text("模型选择", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // 模型选择的单选组
+                    val models = listOf(
+                        "deepseek-v4-flash" to "Flash (速度快/测试首选)",
+                        "deepseek-v4-pro" to "Pro (深度思考/复杂架构)"
+                    )
+                    
+                    models.forEach { (modelId, desc) ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            RadioButton(
+                                selected = selectedModel == modelId,
+                                onClick = { selectedModel = modelId }
+                            )
+                            Text(text = desc, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(24.dp))
                     
                     Button(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.ToggleOn)
-                            onSaveApiKey(inputKey)
+                            onSaveConfig(inputKey, selectedModel)
                         },
                         modifier = Modifier.align(Alignment.End)
                     ) {
