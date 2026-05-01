@@ -1,8 +1,10 @@
-// [文件路径: app/src/main/java/com/xixin/codent/data/model/WorkspaceState.kt]
 package com.xixin.codent.data.model
 
 import android.net.Uri
 
+/**
+ * 补丁提议模型：代表 AI 对某个文件的修改建议
+ */
 data class PatchProposal(
     val targetFileUri: Uri,
     val targetFileName: String,
@@ -11,6 +13,9 @@ data class PatchProposal(
     val proposedContent: String 
 )
 
+/**
+ * 全局 UI 状态源
+ */
 data class WorkspaceState(
     val directoryStack: List<Uri> = emptyList(),
     val currentFiles: List<FileNode> = emptyList(),
@@ -27,6 +32,8 @@ data class WorkspaceState(
     val selectedModel: String = "deepseek-reasoner",
     val enableThinking: Boolean = true,
     
-    val pendingPatch: PatchProposal? = null,
+    // 🔥 重要修改：由 pendingPatch: PatchProposal? 改为列表，支持一次性存入多个修改建议
+    val pendingPatches: List<PatchProposal> = emptyList(), 
+    
     val isAgentWorking: Boolean = false 
 )

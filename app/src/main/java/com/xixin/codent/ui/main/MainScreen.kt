@@ -94,12 +94,14 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 WorkspaceTab.AGENT -> ChatPanel(
                     messages = uiState.chatMessages,
                     isAgentWorking = uiState.isAgentWorking,
-                    pendingPatch = uiState.pendingPatch,
+                    // 🔥 修复点 1：这里改为传递列表 pendingPatches
+                    pendingPatches = uiState.pendingPatches, 
                     onSendMessage = { viewModel.sendChatMessage(it) },
-                    onConfirmPatch = { viewModel.confirmPatch() },
-                    onRejectPatch = { viewModel.rejectPatch() },
+                    // 🔥 修复点 2：回调现在需要接收一个 patch 对象并传给 ViewModel
+                    onConfirmPatch = { patch -> viewModel.confirmPatch(patch) }, 
+                    // 🔥 修复点 3：同理，拒绝也需要知道拒绝的是哪一个
+                    onRejectPatch = { patch -> viewModel.rejectPatch(patch) },
                     onDeleteMessage = { index -> viewModel.deleteMessage(index) },
-                    // 🔥 就在这！补齐了要求传入的 onEditUserMessage 参数！
                     onEditUserMessage = { index, text -> viewModel.editAndResendMessage(index, text) }
                 )
                 WorkspaceTab.SETTINGS -> SettingsPanel(

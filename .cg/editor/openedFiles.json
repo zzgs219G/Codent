@@ -1,0 +1,201 @@
+{
+  "allFiles": [
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/main/MainViewModel.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 12684,
+          "line": 324
+        },
+        "start": {
+          "column": 0,
+          "index": 12684,
+          "line": 324
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/data/api/AiApiService.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 8807,
+          "line": 242
+        },
+        "start": {
+          "column": 1,
+          "index": 8807,
+          "line": 242
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/chat/ChatPanel.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        },
+        "start": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/domain/AgentOrchestrator.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 17120,
+          "line": 386
+        },
+        "start": {
+          "column": 0,
+          "index": 17120,
+          "line": 386
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/data/repository/SafRepository.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 18005,
+          "line": 439
+        },
+        "start": {
+          "column": 1,
+          "index": 18005,
+          "line": 439
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/core/agent/AgentEvent.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        },
+        "start": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/core/agent/CodePatcher.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 966,
+          "line": 27
+        },
+        "start": {
+          "column": 0,
+          "index": 966,
+          "line": 27
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/core/agent/AiToolbox.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 4101,
+          "line": 102
+        },
+        "start": {
+          "column": 0,
+          "index": 4101,
+          "line": 102
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/core/agent/AiActionRunner.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 5133,
+          "line": 105
+        },
+        "start": {
+          "column": 0,
+          "index": 5133,
+          "line": 105
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/core/agent/AiBrain.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 7776,
+          "line": 180
+        },
+        "start": {
+          "column": 1,
+          "index": 7776,
+          "line": 180
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/data/model/WorkspaceState.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 1084,
+          "line": 39
+        },
+        "start": {
+          "column": 0,
+          "index": 1084,
+          "line": 39
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/main/MainScreen.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 5337,
+          "line": 118
+        },
+        "start": {
+          "column": 0,
+          "index": 5337,
+          "line": 118
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/BaseActivity.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        },
+        "start": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        }
+      }
+    }
+  ],
+  "projectPath": "/storage/emulated/0/CodeOnTheGoProjects/Codent",
+  "selectedFile": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/BaseActivity.kt"
+}

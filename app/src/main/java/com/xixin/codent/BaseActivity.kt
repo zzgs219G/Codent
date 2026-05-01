@@ -11,18 +11,21 @@ import androidx.activity.enableEdgeToEdge
 abstract class BaseActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 1. 开启沉浸式边缘到边缘 (Edge-to-Edge)
-        // 官方最新 API，会自动根据下面的 Surface 颜色切换状态栏图标是黑色还是白色！
+        // 1. 开启沉浸式 Edge-to-Edge，状态栏图标颜色由 Surface 背景自动适配
         enableEdgeToEdge()
-        
+
         super.onCreate(savedInstanceState)
 
-        // 2. 注入高帧率基因 (120Hz)
+        // 2. 请求 120Hz 高刷新率，提升界面滑动流畅度
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             window.attributes = window.attributes.also {
-                it.preferredDisplayModeId = 0 // 自动选择最高刷新率
+                it.preferredDisplayModeId = 0
                 it.preferredRefreshRate = 120f
             }
         }
+
+        // 3. 日志标记：确认 Activity 创建流程执行完毕
+        android.util.Log.d("BaseActivity", "onCreate -> EdgeToEdge + 高刷 已生效")
+
     }
 }

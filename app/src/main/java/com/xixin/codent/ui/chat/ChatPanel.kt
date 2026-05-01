@@ -1,3 +1,4 @@
+
 package com.xixin.codent.ui.chat
 
 import android.widget.Toast
@@ -7,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -21,7 +23,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
@@ -32,30 +33,32 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.xixin.codent.data.model.ChatMessage
 import com.xixin.codent.data.model.PatchProposal
 
+/**
+ * [ChatPanel] - 终端对话面板
+ * 已经重构为支持多文件补丁连击模式
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatPanel(
     messages: List<ChatMessage>,
     isAgentWorking: Boolean,
-    pendingPatch: PatchProposal?,
+    pendingPatches: List<PatchProposal>, // 🔥 核心修改：改为支持列表
     onSendMessage: (String) -> Unit,
-    onConfirmPatch: () -> Unit,
-    onRejectPatch: () -> Unit,
-    onDeleteMessage: (Int) -> Unit, // 仅用于 -1 清空全部
-    onEditUserMessage: (Int, String) -> Unit // 🔥 新增编辑回调
+    onConfirmPatch: (PatchProposal) -> Unit, // 🔥 核心修改：回调带上具体的 patch
+    onRejectPatch: (PatchProposal) -> Unit,  // 🔥 核心修改：回调带上具体的 patch
+    onDeleteMessage: (Int) -> Unit,
+    onEditUserMessage: (Int, String) -> Unit
 ) {
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val keyboardController = LocalSoftwareKeyboardController.current
 
+    // 当消息增多或思考内容更新时，自动滚动到底部
     LaunchedEffect(messages.size, messages.lastOrNull()?.content?.length, messages.lastOrNull()?.reasoningContent?.length) {
         if (messages.isNotEmpty()) {
             val totalItems = listState.layoutInfo.totalItemsCount
@@ -66,6 +69,7 @@ fun ChatPanel(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
+        // 顶部操作栏
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainer,
             modifier = Modifier.fillMaxWidth()
@@ -84,6 +88,7 @@ fun ChatPanel(
             }
         }
 
+        // 主消息区域
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -93,6 +98,7 @@ fun ChatPanel(
             contentPadding = PaddingValues(vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // 渲染对话历史
             itemsIndexed(messages) { index, msg ->
                 ChatBubble(
                     msg = msg,
@@ -101,18 +107,20 @@ fun ChatPanel(
                 )
             }
 
-            if (pendingPatch != null) {
-                item {
-                    PatchConfirmationCard(
-                        patch = pendingPatch,
-                        onConfirm = onConfirmPatch,
-                        onReject = onRejectPatch
-                    )
-                }
+            // 🔥 核心修改：渲染待处理补丁列表
+            // 使用 items 循环显示每一个 PatchProposal
+            items(pendingPatches) { patch ->
+                PatchConfirmationCard(
+                    patch = patch,
+                    onConfirm = { onConfirmPatch(patch) },
+                    onReject = { onRejectPatch(patch) }
+                )
             }
+
             item { Spacer(modifier = Modifier.height(1.dp)) }
         }
 
+        // 底部输入区域
         Surface(
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 2.dp,
@@ -211,7 +219,6 @@ fun ChatBubble(
             modifier = Modifier
                 .widthIn(max = maxBubbleWidth)
                 .then(
-                    // 仅允许点击用户发送的消息进入编辑模式
                     if (isUser && !msg.isLoading) Modifier.clickable { showEditDialog = true }
                     else Modifier
                 )
@@ -265,24 +272,20 @@ fun ChatBubble(
                         Spacer(modifier = Modifier.width(1.dp))
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // 去掉了垃圾桶删除按钮！
-
-                        if (!isUser && !msg.isLoading && msg.content.isNotEmpty()) {
-                            IconButton(
-                                onClick = {
-                                    clipboardManager.setText(AnnotatedString(msg.content))
-                                    Toast.makeText(context, "已复制完整回复", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ContentCopy,
-                                    contentDescription = "复制回复",
-                                    tint = textColor.copy(alpha = 0.5f),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
+                    if (!isUser && !msg.isLoading && msg.content.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(msg.content))
+                                Toast.makeText(context, "已复制完整回复", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = "复制回复",
+                                tint = textColor.copy(alpha = 0.5f),
+                                modifier = Modifier.size(16.dp)
+                            )
                         }
                     }
                 }
@@ -290,7 +293,6 @@ fun ChatBubble(
         }
     }
     
-    // 🔥 点击编辑的对话框弹窗
     if (showEditDialog && isUser) {
         AlertDialog(
             onDismissRequest = { showEditDialog = false },
@@ -325,10 +327,6 @@ fun ChatBubble(
         )
     }
 }
-
-// ==========================================
-// 下方的基础 UI 组件（代码高亮/折叠框等）完全保持原样，直接粘贴即可
-// ==========================================
 
 @Composable
 fun SimpleMarkdownText(text: String, textColor: Color) {
@@ -391,12 +389,20 @@ fun ReasoningBox(text: String, isLoading: Boolean) {
             }
             if (expanded) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                    modifier = Modifier.padding(12.dp)
-                )
+                
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 200.dp) 
+                        .verticalScroll(rememberScrollState()) 
+                ) {
+                    Text(
+                        text = text,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
             }
         }
     }
@@ -517,3 +523,5 @@ fun PatchConfirmationCard(patch: PatchProposal, onConfirm: () -> Unit, onReject:
         }
     }
 }
+
+
