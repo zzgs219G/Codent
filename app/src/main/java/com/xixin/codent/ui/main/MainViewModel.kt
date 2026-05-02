@@ -1,7 +1,9 @@
+// [文件路径: app/src/main/java/com/xixin/codent/ui/main/MainViewModel.kt]
 package com.xixin.codent.ui.main
 
 import android.app.Application
 import android.net.Uri
+import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xixin.codent.core.agent.AgentEvent
@@ -10,7 +12,9 @@ import com.xixin.codent.data.api.AiApiService
 import com.xixin.codent.data.api.ApiMessage
 import com.xixin.codent.data.model.ChatMessage
 import com.xixin.codent.data.model.FileNode
+import com.xixin.codent.data.model.PatchItem
 import com.xixin.codent.data.model.PatchProposal
+import com.xixin.codent.data.model.PatchState
 import com.xixin.codent.data.model.WorkspaceState
 import com.xixin.codent.data.repository.SafRepository
 import com.xixin.codent.wrapper.log.AppLog
@@ -29,12 +33,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
-/**
- * [MainViewModel] - 项目的核心调度员
- * 负责 UI 状态维护与业务逻辑分发
- */
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = SafRepository(application)
@@ -75,12 +76,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ==========================================
-    // 第一部分：配置管理 (Settings)
-    // ==========================================
-
     fun clearChat() {
-        // 清空消息的同时，也要清空所有待办补丁
         _uiState.update { it.copy(chatMessages = emptyList(), pendingPatches = emptyList()) }
         persistChatHistoryAsync()
         viewModelScope.launch(Dispatchers.IO) { repository.clearChatHistory() }
@@ -97,10 +93,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repository.saveThinkingEnabled(enabled)
         _uiState.update { it.copy(enableThinking = enabled) }
     }
-
-    // ==========================================
-    // 第二部分：文件系统管理 (File System)
-    // ==========================================
 
     fun initWorkspace(uri: Uri) {
         repository.takePersistableUriPermission(uri)
@@ -135,7 +127,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 删除单条消息 */
     fun deleteMessage(index: Int) {
         if (index < 0) { clearChat(); return }
         if (index !in _uiState.value.chatMessages.indices) return
@@ -143,7 +134,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         persistChatHistoryAsync()
     }
 
-    /** 编辑并重发 */
     fun editAndResendMessage(index: Int, newText: String) {
         val state = _uiState.value
         if (index !in state.chatMessages.indices || state.chatMessages[index].role != "user") return
@@ -152,68 +142,66 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ==========================================
-    // 第三部分：AI 调度与 批量补丁流程
+    // 🔥 核心重写：确认、拒绝与撤回的持久化逻辑
     // ==========================================
 
-    /** * 确认并应用补丁
-     * @param patch 指定要操作的补丁对象
-     */
-    fun confirmPatch(patch: PatchProposal) {
+    fun confirmPatch(messageIndex: Int, patchIndex: Int, patch: PatchProposal) {
         viewModelScope.launch {
             val success = repository.overwriteFile(patch.targetFileUri, patch.proposedContent)
             if (success) {
                 AppLog.d("💾 [文件落盘]: ✅ 用户确认修改成功: ${patch.targetFileName}")
                 _uiState.update { state ->
-                    // 如果当前编辑器正好打开着这个文件，同步刷新编辑器内容
-                    val updatedContent = if (state.selectedFile?.uri == patch.targetFileUri) {
-                        patch.proposedContent 
-                    } else {
-                        state.currentCodeContent
+                    val msgs = state.chatMessages.toMutableList()
+                    // 精准制导：把对应的卡片状态改为已应用
+                    if (messageIndex in msgs.indices) {
+                        val targetMsg = msgs[messageIndex]
+                        val updatedPatches = targetMsg.patches.toMutableList()
+                        if (patchIndex in updatedPatches.indices) {
+                            updatedPatches[patchIndex] = updatedPatches[patchIndex].copy(state = PatchState.APPLIED)
+                            msgs[messageIndex] = targetMsg.copy(patches = updatedPatches)
+                        }
                     }
+                    val updatedContent = if (state.selectedFile?.uri == patch.targetFileUri) patch.proposedContent else state.currentCodeContent
                     
-                    state.copy(
-                        // 从待办列表中移除该补丁
-                        pendingPatches = state.pendingPatches.filter { it != patch },
-                        currentCodeContent = updatedContent,
-                        chatMessages = state.chatMessages + ChatMessage(
-                            role = "assistant", 
-                            content = "✅ **已成功修改并保存** `${patch.targetFileName}`！"
-                        )
-                    )
+                    // 注意：这里不再新增一句废话聊天了！UI 自己会折叠变色
+                    state.copy(chatMessages = msgs, currentCodeContent = updatedContent)
                 }
                 persistChatHistoryAsync()
             } else {
                 AppLog.e("❌ [文件落盘]: 保存失败: ${patch.targetFileName}")
-                _uiState.update { state ->
-                    state.copy(
-                        pendingPatches = state.pendingPatches.filter { it != patch },
-                        chatMessages = state.chatMessages + ChatMessage(
-                            role = "assistant", 
-                            content = "❌ **保存失败**，无法覆写 `${patch.targetFileName}`。"
-                        )
-                    )
-                }
-                persistChatHistoryAsync()
             }
         }
     }
 
-    /** * 拒绝补丁提议
-     * @param patch 指定要操作的补丁对象
-     */
-    fun rejectPatch(patch: PatchProposal) {
+    fun rejectPatch(messageIndex: Int, patchIndex: Int, patch: PatchProposal) {
         AppLog.d("🚫 [文件落盘]: 用户拒绝了修改提议: ${patch.targetFileName}")
         _uiState.update { state -> 
-            state.copy(
-                pendingPatches = state.pendingPatches.filter { it != patch },
-                chatMessages = state.chatMessages + ChatMessage(
-                    role = "assistant", 
-                    content = "🚫 已取消对 `${patch.targetFileName}` 的修改。"
-                )
-            )
+            val msgs = state.chatMessages.toMutableList()
+            // 精准制导：把对应的卡片状态改为已拒绝
+            if (messageIndex in msgs.indices) {
+                val targetMsg = msgs[messageIndex]
+                val updatedPatches = targetMsg.patches.toMutableList()
+                if (patchIndex in updatedPatches.indices) {
+                    updatedPatches[patchIndex] = updatedPatches[patchIndex].copy(state = PatchState.REJECTED)
+                    msgs[messageIndex] = targetMsg.copy(patches = updatedPatches)
+                }
+            }
+            state.copy(chatMessages = msgs)
         }
         persistChatHistoryAsync()
     }
+
+    fun undoPatch(messageIndex: Int, patchIndex: Int, patch: PatchProposal) {
+        // 🔥 预留撤回接口：后续你可以在这里实现把旧代码覆写回去的逻辑
+        AppLog.i("⏪ [撤回功能开发中] 用户请求撤回对 ${patch.targetFileName} 的修改")
+        viewModelScope.launch(Dispatchers.Main) {
+            Toast.makeText(getApplication(), "撤回功能研发中...", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // ==========================================
+    // AI 调度
+    // ==========================================
 
     fun sendChatMessage(userText: String) {
         val cleanedText = userText.trim()
@@ -255,8 +243,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             updateLastMessageUsage(event.promptTokens, event.completionTokens)
                         }
                         is AgentEvent.PatchProposed -> {
-                            // 🔥 这里是核心：使用列表累加补丁，不再覆盖
-                            _uiState.update { it.copy(pendingPatches = it.pendingPatches + event.proposal) }
+                            // 🔥 核心升级：不再写进全局变量，直接追加到当前最后一条聊天记录身上！
+                            _uiState.update { state ->
+                                val msgs = state.chatMessages.toMutableList()
+                                if (msgs.isEmpty()) return@update state
+                                val lastMsg = msgs.last()
+                                val newPatch = PatchItem(event.proposal, PatchState.PENDING)
+                                msgs[msgs.lastIndex] = lastMsg.copy(patches = lastMsg.patches + newPatch)
+                                state.copy(chatMessages = msgs)
+                            }
                         }
                         is AgentEvent.Error -> {
                             updateLastMessage("❌ API 报错: ${event.message}", "", false, 0)
@@ -280,6 +275,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { state ->
             val messages = state.chatMessages.toMutableList()
             if (messages.isEmpty()) return@update state
+            // 注意这里要保留 patches 不被覆盖掉
             messages[messages.lastIndex] = messages.last().copy(
                 content = text, reasoningContent = reasoning, isLoading = isLoading, uploadChars = uploadChars
             )

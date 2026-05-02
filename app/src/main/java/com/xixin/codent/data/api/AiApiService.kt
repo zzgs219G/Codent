@@ -1,7 +1,9 @@
+// [文件路径: app/src/main/java/com/xixin/codent/data/api/AiApiService.kt]
 package com.xixin.codent.data.api
 
 import com.xixin.codent.wrapper.log.AppLog
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.timeout // 🔥 核心修复：引入 HttpTimeout 配置
 import io.ktor.http.contentType 
 import io.ktor.client.request.header
 import io.ktor.client.request.preparePost
@@ -140,6 +142,12 @@ class AiApiService(private val client: HttpClient) {
             client.preparePost(baseUrl) {
                 header(HttpHeaders.Authorization, "Bearer $apiKey")
                 contentType(ContentType.Application.Json)
+                
+                // 🔥 核心修复：注入连接超时，彻底干掉 32 秒的死等！
+                timeout {
+                    connectTimeoutMillis = 10000 // 握手连接最多等 10 秒
+                }
+                
                 setBody(
                     ChatRequest(
                         model = model,

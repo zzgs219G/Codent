@@ -1,3 +1,4 @@
+// [文件路径: app/src/main/java/com/xixin/codent/data/repository/SafRepository.kt]
 package com.xixin.codent.data.repository
 
 import android.content.Context
@@ -306,13 +307,13 @@ class SafRepository(private val context: Context) {
         try {
             traverse(rootDoc, "")
             if (results.isEmpty()) {
-                "未找到包含 `$fileName` 的文件。"
+                 "未找到包含 `$fileName` 的文件。"
             } else {
                 buildString {
                     append("找到以下文件路径 (请复制准确路径使用):\n")
                     results.forEach { append("📄 $it\n") }
                 }
-            }
+             }
         } catch (e: Exception) {
             "搜索异常: ${e.message}"
         }
@@ -344,7 +345,7 @@ class SafRepository(private val context: Context) {
                 context.contentResolver.openInputStream(doc.uri)?.use { stream ->
                     val lines = stream.bufferedReader().readLines()
                     val matchedIndices = lines.mapIndexedNotNull { index, line ->
-                        if (line.contains(keyword, ignoreCase = true)) index else null
+                         if (line.contains(keyword, ignoreCase = true)) index else null
                     }
 
                     if (matchedIndices.isNotEmpty()) {
@@ -360,7 +361,7 @@ class SafRepository(private val context: Context) {
                         snippetBuilder.append("...\n")
                         results.add(snippetBuilder.toString())
                     }
-                }
+                 }
             } catch (e: Exception) {
                 // Ignore search error on specific file
             }
@@ -368,7 +369,7 @@ class SafRepository(private val context: Context) {
 
         try {
             traverse(rootDoc, "")
-            if (results.isEmpty()) {
+             if (results.isEmpty()) {
                 "未检索到包含 `$keyword` 的文件。"
             } else {
                 buildString {
@@ -383,10 +384,11 @@ class SafRepository(private val context: Context) {
 
     suspend fun generateProjectTree(rootUri: Uri, maxDepth: Int = 12): String = withContext(Dispatchers.IO) {
         val rootDoc = DocumentFile.fromTreeUri(context, rootUri) ?: return@withContext "None"
-        val sb = StringBuilder()
         val heavyIgnore = ignoredDirectories + setOf(".cg", ".kotlin", "res", "drawable", "layout", "mipmap", "values")
 
-        suspend fun traverse(doc: DocumentFile, depth: Int) {
+        val dirMap = mutableMapOf<String, MutableList<String>>()
+
+        suspend fun traverse(doc: DocumentFile, currentPath: String, depth: Int) {
             if (depth > maxDepth) return
             val files = doc.listFiles().filter { file ->
                 val name = file.name ?: return@filter false
@@ -396,28 +398,32 @@ class SafRepository(private val context: Context) {
 
             for (file in files) {
                 val name = file.name ?: continue
-                repeat(depth) { sb.append(".") } 
-                
                 if (file.isDirectory) {
-                    sb.append(name).append("/\n")
-                    traverse(file, depth + 1)
+                    val nextPath = if (currentPath.isEmpty()) name else "$currentPath/$name"
+                    traverse(file, nextPath, depth + 1)
                 } else {
-                    // 🔥 [核心升级]: 增加文件大小输出，让 AI 感知代码规模
-                    val length = file.length()
-                    val sizeStr = if (length < 1024) {
-                        "${length}B"
-                    } else {
-                        val kb = length / 1024.0
-                        String.format("%.1fKB", kb)
-                    }
-                    sb.append(name).append(" (").append(sizeStr).append(")\n")
+                    val kb = file.length() / 1024.0
+                    val sizeStr = if (kb < 1.0) "<1K" else String.format("%.1fK", kb)
+                    val dirKey = if (currentPath.isEmpty()) "/" else currentPath
+                    dirMap.getOrPut(dirKey) { mutableListOf() }.add("$name($sizeStr)")
                 }
             }
         }
-        traverse(rootDoc, 0)
+        
+        traverse(rootDoc, "", 0)
+
+        val sb = StringBuilder()
+        sb.append("【项目目录结构】\n")
+        
+        dirMap.toSortedMap().forEach { (dir, fileList) ->
+            val cleanDir = if (dir == "/") "" else dir 
+            sb.append(if (cleanDir.isEmpty()) "/" else cleanDir)
+              .append(": [")
+              .append(fileList.joinToString(", "))
+              .append("]\n")
+        }
         sb.toString()
     }
-
 
     private fun resolveDirectory(rootUri: Uri, relativePath: String): DocumentFile? {
         val rootDoc = DocumentFile.fromTreeUri(context, rootUri) ?: return null

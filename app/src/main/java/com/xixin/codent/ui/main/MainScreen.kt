@@ -1,3 +1,4 @@
+// [文件路径: app/src/main/java/com/xixin/codent/ui/main/MainScreen.kt]
 package com.xixin.codent.ui.main
 
 import android.net.Uri
@@ -5,7 +6,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Code
@@ -17,8 +17,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.xixin.codent.wrapper.log.DebugFloatingConsole
 import com.xixin.codent.ui.chat.ChatPanel
+import com.xixin.codent.ui.chat.ChatAction
 import com.xixin.codent.ui.editor.EditorPanel
 import com.xixin.codent.ui.explorer.ExplorerPanel
 import com.xixin.codent.ui.settings.SettingsPanel
@@ -35,8 +35,6 @@ enum class WorkspaceTab(val title: String, val icon: ImageVector) {
 fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
     var currentTab by remember { mutableStateOf(WorkspaceTab.EXPLORER) }
-    
-    val isKeyboardVisible = WindowInsets.isImeVisible
 
     val folderPickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
@@ -49,20 +47,14 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         bottomBar = {
-            AnimatedVisibility(
-                visible = !isKeyboardVisible,
-                enter = slideInVertically(animationSpec = tween(300)) { it } + fadeIn(),
-                exit = slideOutVertically(animationSpec = tween(300)) { it } + fadeOut()
-            ) {
-                NavigationBar {
-                    WorkspaceTab.entries.forEach { tab ->
-                        NavigationBarItem(
-                            selected = currentTab == tab,
-                            onClick = { currentTab = tab },
-                            icon = { Icon(tab.icon, contentDescription = tab.title) },
-                            label = { Text(tab.title) }
-                        )
-                    }
+            NavigationBar {
+                WorkspaceTab.entries.forEach { tab ->
+                    NavigationBarItem(
+                        selected = currentTab == tab,
+                        onClick = { currentTab = tab },
+                        icon = { Icon(tab.icon, contentDescription = tab.title) },
+                        label = { Text(tab.title) }
+                    )
                 }
             }
         }
@@ -77,7 +69,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .consumeWindowInsets(innerPadding)
+                .consumeWindowInsets(innerPadding) 
         ) { tab ->
             when (tab) {
                 WorkspaceTab.EXPLORER -> ExplorerPanel(
@@ -94,15 +86,41 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 WorkspaceTab.AGENT -> ChatPanel(
                     messages = uiState.chatMessages,
                     isAgentWorking = uiState.isAgentWorking,
-                    // 🔥 修复点 1：这里改为传递列表 pendingPatches
                     pendingPatches = uiState.pendingPatches, 
-                    onSendMessage = { viewModel.sendChatMessage(it) },
-                    // 🔥 修复点 2：回调现在需要接收一个 patch 对象并传给 ViewModel
-                    onConfirmPatch = { patch -> viewModel.confirmPatch(patch) }, 
-                    // 🔥 修复点 3：同理，拒绝也需要知道拒绝的是哪一个
-                    onRejectPatch = { patch -> viewModel.rejectPatch(patch) },
-                    onDeleteMessage = { index -> viewModel.deleteMessage(index) },
-                    onEditUserMessage = { index, text -> viewModel.editAndResendMessage(index, text) }
+                    onAction = { action ->
+                        // 🔥 核心修复点：这里的 when 必须和我们在 ChatPanel 里定义的 ChatAction 一一对应
+                        when (action) {
+                            is ChatAction.SendMessage -> viewModel.sendChatMessage(action.text)
+                            
+                            // 1. 确认补丁：传入三个参数 (消息索引, 补丁索引, 补丁对象)
+                            is ChatAction.ConfirmPatch -> viewModel.confirmPatch(
+                                action.messageIndex, 
+                                action.patchIndex, 
+                                action.patch
+                            )
+                            
+                            // 2. 拒绝补丁
+                            is ChatAction.RejectPatch -> viewModel.rejectPatch(
+                                action.messageIndex, 
+                                action.patchIndex, 
+                                action.patch
+                            )
+                            
+                            // 3. 🔥 补齐缺失的 UndoPatch 分支（编译器刚才报错就在这）
+                            is ChatAction.UndoPatch -> viewModel.undoPatch(
+                                action.messageIndex, 
+                                action.patchIndex, 
+                                action.patch
+                            )
+                            
+                            is ChatAction.DeleteMessage -> viewModel.deleteMessage(action.index)
+                            
+                            is ChatAction.EditMessage -> viewModel.editAndResendMessage(
+                                action.index, 
+                                action.text
+                            )
+                        }
+                    }
                 )
                 WorkspaceTab.SETTINGS -> SettingsPanel(
                     apiBaseUrl = uiState.apiBaseUrl,

@@ -1,3 +1,4 @@
+// [文件路径: app/src/main/java/com/xixin/codent/core/agent/AiBrain.kt]
 package com.xixin.codent.core.agent
 
 import android.net.Uri
@@ -12,6 +13,11 @@ class AiBrain(
     private val repository: SafRepository
 ) {
     private val actionRunner = AiActionRunner(repository)
+
+    // 🔥 核心修复：引入轻量级内存缓存，防止连续对话时重复遍历 SAF
+    private var cachedProjectTree: String? = null
+    private var lastRootUriString: String? = null
+    private var lastCacheTimeMs: Long = 0L
 
     fun startConversation(
         rootUri: Uri,
@@ -30,8 +36,19 @@ class AiBrain(
             return@flow
         }
 
-        // 🌳 地图扫描
-        val projectTree = repository.generateProjectTree(rootUri, maxDepth = 12)
+        // 🌳 地图扫描 (🔥 加入缓存拦截机制)
+        val currentTime = System.currentTimeMillis()
+        val uriString = rootUri.toString()
+        val projectTree = if (cachedProjectTree != null && lastRootUriString == uriString && (currentTime - lastCacheTimeMs < 5 * 60 * 1000)) {
+            AppLog.d("🌳 [命中内存缓存] 5分钟内免遍历，极速复用全局目录树！")
+            cachedProjectTree!!
+        } else {
+            val tree = repository.generateProjectTree(rootUri, maxDepth = 12)
+            cachedProjectTree = tree
+            lastRootUriString = uriString
+            lastCacheTimeMs = currentTime
+            tree
+        }
         AppLog.d("🌳 [项目全局目录树生成完毕] (长度: ${projectTree.length} 字符):\n$projectTree")
 
         // 🧠 [完全保留]：你的 8 大红线提示词，一字未改！
@@ -44,7 +61,7 @@ class AiBrain(
 
             【红线警告与执行规范】：
             1. 【全图视野】：我已经把项目文件树交给你了，寻找文件时必须优先对照上面的目录树！
-            2. 【大小感知与禁止问路】：观察文件名括号中的大小（如 30.5KB）。1KB 约等于 30-40 行代码。严禁调用 find_file 或 list_directory 确认已知路径！
+            2. 【大小感知与禁止问路】：观察文件名括号中的大小（如 30.5KB）。1KB 约等于 30-40 行代码。绝对严禁调用 find_file 查找已知文件！地图中的 . 代表基准路径。你要找的文件绝对路径 = 基准路径 + /文件名。你必须在脑海中完成拼接，并直接调用 read_file！
             3. 【大胃王读取 (省钱关键)】：严禁进行小于 100 行的“试探性”读取！如果文件 < 3KB，请直接 read_file(1, 100) 一次性读完。如果文件较大，首轮读取建议范围 1-300 行。目标是在 2 轮内解决战斗。
             4. 【静默执行与强制总结】：调用工具时直接输出 JSON。但是，在执行完所有的修改（apply_patch / create_file）后，你必须在最后一轮输出一段中文，总结你修改了什么，让用户在界面上点击确认。严禁静默结束！
             5. 【精准替换】：修改代码 apply_patch 时 search_string 必须完全复制原文。
