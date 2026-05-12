@@ -117,4 +117,8 @@ implementation("androidx.documentfile:documentfile:1.0.1")
     // 调试预览
     debugImplementation(libs.androidx.compose.ui.tooling)
     implementation(libs.androidx.compose.ui.tooling.preview)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.mockk)
+    testImplementation(libs.robolectric)
 }

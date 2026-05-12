@@ -5,6 +5,10 @@ kotlin = "2.1.0"
 compileSdk = "35"
 minSdk = "26"
 
+junit = "4.13.2"
+mockk = "1.13.9"
+robolectric = "4.11.1"
+
 # 核心库版本
 composeBom = "2025.10.00"
 lifecycle = "2.8.7"
@@ -48,6 +52,10 @@ kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 slf4j-nop = { group = "org.slf4j", name = "slf4j-nop", version = "2.0.16" }
+
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 
 [bundles]
 compose-ui-core = [
