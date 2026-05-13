@@ -1,9 +1,9 @@
-// [文件路径: app/src/main/java/com/xixin/codent/core/agent/AiBrain.kt]
 package com.xixin.codent.core.agent
 
 import android.net.Uri
 import com.xixin.codent.data.api.*
 import com.xixin.codent.data.repository.SafRepository
+import com.xixin.codent.mcp.CodentMcpServer
 import com.xixin.codent.wrapper.log.AppLog
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -12,12 +12,14 @@ class AiBrain(
     private val aiService: AiApiService,
     private val repository: SafRepository
 ) {
-    private val actionRunner = AiActionRunner(repository)
+    private val mcpServer = CodentMcpServer(repository)
+    private val actionRunner = AiActionRunner(repository, mcpServer)
 
     // 🔥 核心修复：引入轻量级内存缓存，防止连续对话时重复遍历 SAF
     private var cachedProjectTree: String? = null
     private var lastRootUriString: String? = null
     private var lastCacheTimeMs: Long = 0L
+    private var isMcpStarted = false
 
     fun startConversation(
         rootUri: Uri,
@@ -29,6 +31,12 @@ class AiBrain(
         userText: String
     ): Flow<AgentEvent> = flow {
         
+        // Ensure MCP server/client pair is started
+        if (!isMcpStarted) {
+            mcpServer.start()
+            isMcpStarted = true
+        }
+
         // 🛡️ 安全拦截
         val dangerKeywords = listOf("销毁项目", "删除所有", "rm -rf", "清空项目")
         if (dangerKeywords.any { userText.contains(it, ignoreCase = true) }) {
@@ -51,8 +59,6 @@ class AiBrain(
         }
         AppLog.d("🌳 [项目全局目录树生成完毕] (长度: ${projectTree.length} 字符):\n$projectTree")
 
-        // 🧠 [完全保留]：你的 8 大红线提示词，一字未改！
-        // 如果你想让它配合断路器闭嘴，请手动修改第 4 条。
         val systemPrompt = """
             你是一个顶级 Android 架构师 Agent。
             
@@ -94,8 +100,11 @@ class AiBrain(
             var errorOccurred = false
             var hasReceivedContent = false
 
+            // Get tools from MCP Client
+            val tools = AiToolbox.getAgentToolsFromMcp(mcpServer.client)
+
             val stream = aiService.getAgentCompletionStream(
-                apiBaseUrl, apiKey, model, apiMessages, AiToolbox.agentTools, enableThinking
+                apiBaseUrl, apiKey, model, apiMessages, tools, enableThinking
             )
 
             stream.collect { event ->

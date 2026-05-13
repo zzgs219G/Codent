@@ -93,6 +93,7 @@ android {
 }
 
 dependencies {
+    implementation(libs.kotlin.sdk.mcp)
 
 implementation("androidx.documentfile:documentfile:1.0.1")
     // UI 层 (Compose 核心 Bundle)
