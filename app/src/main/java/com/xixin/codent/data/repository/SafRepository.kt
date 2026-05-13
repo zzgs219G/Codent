@@ -19,8 +19,18 @@ import kotlinx.serialization.json.Json
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
+import java.util.concurrent.ConcurrentHashMap
 
 class SafRepository(private val context: Context) {
+
+    private val documentFileCache = ConcurrentHashMap<String, DocumentFile>()
+
+    private fun getCachedDocumentFile(uri: Uri): DocumentFile? {
+        val uriString = uri.toString()
+        return documentFileCache.getOrPut(uriString) {
+            DocumentFile.fromTreeUri(context, uri) ?: return null
+        }
+    }
 
     private val ignoredDirectories = setOf("build", ".git", ".gradle", ".idea", "node_modules", "captures")
     private val allowedCodeExtensions = setOf("kt", "java", "xml", "kts", "gradle", "json", "properties", "md", "txt")
@@ -133,7 +143,7 @@ class SafRepository(private val context: Context) {
             }
             emit(fileList.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() })))
         } catch (e: Exception) {
-            val documentFile = DocumentFile.fromTreeUri(context, folderUri)
+            val documentFile = getCachedDocumentFile(folderUri)
             if (documentFile != null && documentFile.isDirectory) {
                 documentFile.listFiles().forEach { file ->
                     val name = file.name ?: "Unknown"
@@ -198,7 +208,7 @@ class SafRepository(private val context: Context) {
     }
 
     suspend fun findFileByRelativePath(rootUri: Uri, relativePath: String): Uri? = withContext(Dispatchers.IO) {
-        var currentDoc = DocumentFile.fromTreeUri(context, rootUri) ?: return@withContext null
+        var currentDoc = getCachedDocumentFile(rootUri) ?: return@withContext null
         val segments = relativePath.split("/").filter { it.isNotBlank() }
 
         for (segment in segments) {
@@ -210,7 +220,7 @@ class SafRepository(private val context: Context) {
 
     suspend fun createFileByRelativePath(rootUri: Uri, relativePath: String, content: String): String = withContext(Dispatchers.IO) {
         try {
-            var currentDoc = DocumentFile.fromTreeUri(context, rootUri) ?: return@withContext "无法访问项目根目录"
+            var currentDoc = getCachedDocumentFile(rootUri) ?: return@withContext "无法访问项目根目录"
             val segments = relativePath.split("/").filter { it.isNotBlank() }
             if (segments.isEmpty()) return@withContext "路径无效"
 
@@ -286,7 +296,7 @@ class SafRepository(private val context: Context) {
     suspend fun findFilesByName(rootUri: Uri, fileName: String): String = withContext(Dispatchers.IO) {
         if (fileName.isBlank()) return@withContext "搜索文件名不能为空。"
         val results = mutableListOf<String>()
-        val rootDoc = DocumentFile.fromTreeUri(context, rootUri) ?: return@withContext "无法访问根目录。"
+        val rootDoc = getCachedDocumentFile(rootUri) ?: return@withContext "无法访问根目录。"
 
         suspend fun traverse(doc: DocumentFile, currentPath: StringBuilder) {
             if (results.size >= 10) return
@@ -326,7 +336,7 @@ class SafRepository(private val context: Context) {
     suspend fun searchKeyword(rootUri: Uri, keyword: String): String = withContext(Dispatchers.IO) {
         if (keyword.isBlank()) return@withContext "搜索关键字不能为空。"
         val results = mutableListOf<String>()
-        val rootDoc = DocumentFile.fromTreeUri(context, rootUri) ?: return@withContext "无法访问根目录。"
+        val rootDoc = getCachedDocumentFile(rootUri) ?: return@withContext "无法访问根目录。"
 
         suspend fun traverse(doc: DocumentFile, currentPath: java.lang.StringBuilder) {
             if (results.size >= 8) return
@@ -391,7 +401,7 @@ class SafRepository(private val context: Context) {
     }
 
     suspend fun generateProjectTree(rootUri: Uri, maxDepth: Int = 12): String = withContext(Dispatchers.IO) {
-        val rootDoc = DocumentFile.fromTreeUri(context, rootUri) ?: return@withContext "None"
+        val rootDoc = getCachedDocumentFile(rootUri) ?: return@withContext "None"
         val heavyIgnore = ignoredDirectories + setOf(".cg", ".kotlin", "res", "drawable", "layout", "mipmap", "values")
 
         val dirMap = mutableMapOf<String, MutableList<String>>()
@@ -437,7 +447,7 @@ class SafRepository(private val context: Context) {
     }
 
     private fun resolveDirectory(rootUri: Uri, relativePath: String): DocumentFile? {
-        val rootDoc = DocumentFile.fromTreeUri(context, rootUri) ?: return null
+        val rootDoc = getCachedDocumentFile(rootUri) ?: return null
         if (relativePath.isBlank() || relativePath == ".") return rootDoc
 
         var current = rootDoc
