@@ -288,24 +288,28 @@ class SafRepository(private val context: Context) {
         val results = mutableListOf<String>()
         val rootDoc = DocumentFile.fromTreeUri(context, rootUri) ?: return@withContext "无法访问根目录。"
 
-        suspend fun traverse(doc: DocumentFile, currentPath: String) {
+        suspend fun traverse(doc: DocumentFile, currentPath: StringBuilder) {
             if (results.size >= 10) return
             if (doc.isDirectory) {
                 val name = doc.name ?: return
                 if (ignoredDirectories.contains(name)) return
                 doc.listFiles().forEach { child ->
-                    val nextPath = if (currentPath.isEmpty()) child.name.orEmpty() else "$currentPath/${child.name.orEmpty()}"
-                    traverse(child, nextPath)
+                    val childName = child.name.orEmpty()
+                    val len = currentPath.length
+                    if (len > 0) currentPath.append("/")
+                    currentPath.append(childName)
+                    traverse(child, currentPath)
+                    currentPath.setLength(len)
                 }
                 return
             }
             if (doc.name?.contains(fileName, ignoreCase = true) == true) {
-                results.add(currentPath)
+                results.add(currentPath.toString())
             }
         }
 
         try {
-            traverse(rootDoc, "")
+            traverse(rootDoc, java.lang.StringBuilder())
             if (results.isEmpty()) {
                  "未找到包含 `$fileName` 的文件。"
             } else {
@@ -324,15 +328,19 @@ class SafRepository(private val context: Context) {
         val results = mutableListOf<String>()
         val rootDoc = DocumentFile.fromTreeUri(context, rootUri) ?: return@withContext "无法访问根目录。"
 
-        suspend fun traverse(doc: DocumentFile, currentPath: String) {
+        suspend fun traverse(doc: DocumentFile, currentPath: java.lang.StringBuilder) {
             if (results.size >= 8) return
 
             if (doc.isDirectory) {
                 val name = doc.name ?: return
                 if (ignoredDirectories.contains(name)) return
                 doc.listFiles().forEach { child ->
-                    val nextPath = if (currentPath.isEmpty()) child.name.orEmpty() else "$currentPath/${child.name.orEmpty()}"
-                    traverse(child, nextPath)
+                    val childName = child.name.orEmpty()
+                    val len = currentPath.length
+                    if (len > 0) currentPath.append("/")
+                    currentPath.append(childName)
+                    traverse(child, currentPath)
+                    currentPath.setLength(len)
                 }
                 return
             }
@@ -349,7 +357,7 @@ class SafRepository(private val context: Context) {
                     }
 
                     if (matchedIndices.isNotEmpty()) {
-                        val snippetBuilder = StringBuilder().append("📄 $currentPath\n")
+                        val snippetBuilder = StringBuilder().append("📄 ${currentPath}\n")
                         matchedIndices.take(3).forEach { idx ->
                             val start = maxOf(0, idx - 1)
                             val end = minOf(lines.lastIndex, idx + 1)
@@ -368,7 +376,7 @@ class SafRepository(private val context: Context) {
         }
 
         try {
-            traverse(rootDoc, "")
+            traverse(rootDoc, java.lang.StringBuilder())
              if (results.isEmpty()) {
                 "未检索到包含 `$keyword` 的文件。"
             } else {
@@ -388,7 +396,7 @@ class SafRepository(private val context: Context) {
 
         val dirMap = mutableMapOf<String, MutableList<String>>()
 
-        suspend fun traverse(doc: DocumentFile, currentPath: String, depth: Int) {
+        suspend fun traverse(doc: DocumentFile, currentPath: java.lang.StringBuilder, depth: Int) {
             if (depth > maxDepth) return
             val files = doc.listFiles().filter { file ->
                 val name = file.name ?: return@filter false
@@ -399,18 +407,21 @@ class SafRepository(private val context: Context) {
             for (file in files) {
                 val name = file.name ?: continue
                 if (file.isDirectory) {
-                    val nextPath = if (currentPath.isEmpty()) name else "$currentPath/$name"
-                    traverse(file, nextPath, depth + 1)
+                    val len = currentPath.length
+                    if (len > 0) currentPath.append("/")
+                    currentPath.append(name)
+                    traverse(file, currentPath, depth + 1)
+                    currentPath.setLength(len)
                 } else {
                     val kb = file.length() / 1024.0
                     val sizeStr = if (kb < 1.0) "<1K" else String.format("%.1fK", kb)
-                    val dirKey = if (currentPath.isEmpty()) "/" else currentPath
+                    val dirKey = if (currentPath.isEmpty()) "/" else currentPath.toString()
                     dirMap.getOrPut(dirKey) { mutableListOf() }.add("$name($sizeStr)")
                 }
             }
         }
         
-        traverse(rootDoc, "", 0)
+        traverse(rootDoc, java.lang.StringBuilder(), 0)
 
         val sb = StringBuilder()
         sb.append("【项目目录结构】\n")
