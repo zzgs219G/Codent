@@ -1,4 +1,3 @@
-// [文件路径: app/src/main/java/com/xixin/codent/ui/chat/components/PatchConfirmationCard.kt]
 package com.xixin.codent.ui.chat.components
 
 import androidx.compose.animation.animateContentSize
@@ -11,12 +10,10 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
@@ -42,8 +39,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.xixin.codent.data.model.PatchProposal
-// 🔥 核心修复：链接到 model 里的状态，不再在本地重复定义
-import com.xixin.codent.data.model.PatchState 
+import com.xixin.codent.data.model.PatchState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,12 +58,21 @@ fun PatchConfirmationCard(
 
     ElevatedCard(
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = if (isExpanded) 4.dp else 1.dp),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        elevation = CardDefaults.elevatedCardElevation(
+            defaultElevation = if (isExpanded) 4.dp else 1.dp
+        ),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 4.dp, vertical = 4.dp)
-            .animateContentSize(animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium))
+            .animateContentSize(
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy, 
+                    stiffness = Spring.StiffnessMedium
+                )
+            )
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             
@@ -79,7 +84,12 @@ fun PatchConfirmationCard(
                     .clickable { isExpanded = !isExpanded }
                     .padding(horizontal = 12.dp, vertical = 10.dp)
             ) {
-                Icon(Icons.Default.Code, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                Icon(
+                    imageVector = Icons.Default.Code, 
+                    contentDescription = null, 
+                    tint = MaterialTheme.colorScheme.primary, 
+                    modifier = Modifier.size(20.dp)
+                )
                 Spacer(modifier = Modifier.width(8.dp))
                 
                 Text(
@@ -94,7 +104,11 @@ fun PatchConfirmationCard(
                 
                 StatusBadge(patchState)
                 Spacer(modifier = Modifier.width(8.dp))
-                Icon(if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = MaterialTheme.colorScheme.outline)
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, 
+                    contentDescription = null, 
+                    tint = MaterialTheme.colorScheme.outline
+                )
             }
 
             if (isExpanded) {
@@ -105,9 +119,13 @@ fun PatchConfirmationCard(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("代码修改预览", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                        Text(
+                            text = "代码修改预览", 
+                            style = MaterialTheme.typography.labelMedium, 
+                            color = MaterialTheme.colorScheme.outline
+                        )
                         IconButton(onClick = { isFullScreen = true }, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Fullscreen, "全屏", tint = MaterialTheme.colorScheme.primary)
+                            Icon(Icons.Default.Fullscreen, contentDescription = "全屏", tint = MaterialTheme.colorScheme.primary)
                         }
                     }
 
@@ -119,7 +137,10 @@ fun PatchConfirmationCard(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Box(modifier = Modifier.padding(10.dp)) {
-                            DiffTextRenderer(patch.diffText, maxLines = 8)
+                            // 🔥 现代化 UI 体验：折叠状态下也支持局部长按复制
+                            SelectionContainer {
+                                DiffTextRenderer(patch.diffText, maxLines = 8)
+                            }
                         }
                     }
 
@@ -153,7 +174,12 @@ fun PatchConfirmationCard(
                                 }
                             }
                             PatchState.REJECTED -> {
-                                Text("已丢弃此补丁", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline, modifier = Modifier.align(Alignment.CenterVertically))
+                                Text(
+                                    text = "已丢弃此补丁", 
+                                    style = MaterialTheme.typography.labelMedium, 
+                                    color = MaterialTheme.colorScheme.outline, 
+                                    modifier = Modifier.align(Alignment.CenterVertically)
+                                )
                             }
                         }
                     }
@@ -162,14 +188,17 @@ fun PatchConfirmationCard(
         }
     }
 
-    // 全屏 Dialog
+    // 🔥 现代化架构：沉浸式全屏审查 Dialog
     if (isFullScreen) {
         Dialog(
             onDismissRequest = { isFullScreen = false },
+            // 使用 usePlatformDefaultWidth 解除默认边距，实现真正的全屏
             properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)
         ) {
-            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-                Column(modifier = Modifier.fillMaxSize()) {
+            // 🔥 现代规范：使用 Scaffold 自动处理状态栏 (WindowInsets) 避让，防刘海遮挡
+            Scaffold(
+                modifier = Modifier.fillMaxSize(),
+                topBar = {
                     TopAppBar(
                         title = { 
                             Column {
@@ -184,31 +213,49 @@ fun PatchConfirmationCard(
                         },
                         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
                     )
-                    
-                    SelectionContainer(modifier = Modifier.fillMaxSize().weight(1f)) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                                .verticalScroll(rememberScrollState())
-                                .horizontalScroll(rememberScrollState())
-                        ) {
-                            DiffTextRenderer(patch.diffText, maxLines = Int.MAX_VALUE)
-                        }
-                    }
-                    
+                },
+                bottomBar = {
                     if (patchState == PatchState.PENDING) {
-                        Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
-                            Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.End) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceContainer, 
+                            shadowElevation = 8.dp,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .windowInsetsPadding(WindowInsets.navigationBars) // 🔥 适配底部小白条
+                                    .padding(16.dp), 
+                                horizontalArrangement = Arrangement.End
+                            ) {
                                 OutlinedButton(
                                     onClick = { isFullScreen = false; onReject(); isExpanded = false },
                                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
-                                ) { Text("拒绝") }
+                                ) { Text("拒绝修改") }
                                 Spacer(modifier = Modifier.width(16.dp))
-                                Button(onClick = { isFullScreen = false; onConfirm(); isExpanded = false }) { Text("应用并关闭") }
+                                Button(onClick = { isFullScreen = false; onConfirm(); isExpanded = false }) { 
+                                    Text("确认应用") 
+                                }
                             }
                         }
+                    }
+                }
+            ) { innerPadding ->
+                SelectionContainer(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding) // 🔥 完美应用 Scaffold 算出的安全内边距
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                            .verticalScroll(rememberScrollState())
+                            .horizontalScroll(rememberScrollState())
+                            .padding(16.dp) 
+                    ) {
+                        DiffTextRenderer(patch.diffText, maxLines = Int.MAX_VALUE)
                     }
                 }
             }
@@ -247,16 +294,31 @@ fun DiffTextRenderer(diffText: String, maxLines: Int) {
     val warnColor = if (isDark) Color(0xFFFFD54F) else Color(0xFFF57F17)
     val baseTextColor = MaterialTheme.colorScheme.onSurfaceVariant
 
+    // 🔥 现代化渲染核心：更精准、高容错的 Diff 匹配算法
     val annotatedString = buildAnnotatedString {
-        diffText.lines().forEach { line ->
+        val lines = diffText.lines()
+        lines.forEachIndexed { index, line ->
             when {
-                line.startsWith("⚠️") -> withStyle(SpanStyle(color = warnColor, fontWeight = FontWeight.Bold)) { append(line) }
-                line.startsWith("---") || line.startsWith("-----") || line.startsWith("文件:") -> withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)) { append(line) }
-                line.startsWith("- ") -> withStyle(SpanStyle(color = removeColor, background = removeColor.copy(alpha = if (isDark) 0.15f else 0.1f))) { append(line) }
-                line.startsWith("+ ") -> withStyle(SpanStyle(color = addColor, background = addColor.copy(alpha = if (isDark) 0.15f else 0.1f))) { append(line) }
-                else -> withStyle(SpanStyle(color = baseTextColor)) { append(line) }
+                line.startsWith("⚠️") -> 
+                    withStyle(SpanStyle(color = warnColor, fontWeight = FontWeight.Bold)) { append(line) }
+                
+                line.startsWith("---") || line.startsWith("+++") || line.startsWith("文件:") -> 
+                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)) { append(line) }
+                
+                // 彻底解决 java-diff-utils 少空格导致失去高亮的问题
+                line.startsWith("-") -> 
+                    withStyle(SpanStyle(color = removeColor, background = removeColor.copy(alpha = if (isDark) 0.15f else 0.1f))) { append(line) }
+                
+                line.startsWith("+") -> 
+                    withStyle(SpanStyle(color = addColor, background = addColor.copy(alpha = if (isDark) 0.15f else 0.1f))) { append(line) }
+                
+                else -> 
+                    withStyle(SpanStyle(color = baseTextColor)) { append(line) }
             }
-            append("\n")
+            // 解决界面底部迷之空行留白的问题
+            if (index < lines.lastIndex) {
+                append("\n")
+            }
         }
     }
 
