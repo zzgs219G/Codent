@@ -12,6 +12,7 @@ import com.xixin.codent.data.model.PatchItem
 import com.xixin.codent.data.model.PatchProposal
 import com.xixin.codent.data.model.PatchState
 import com.xixin.codent.data.model.WorkspaceState
+import com.xixin.codent.data.repository.ApiProvider
 import com.xixin.codent.data.repository.ChatHistoryRepository
 import com.xixin.codent.data.repository.LocalFileRepository
 import com.xixin.codent.data.repository.SettingsRepository
@@ -27,15 +28,15 @@ import kotlinx.coroutines.launch
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val localFileRepository = LocalFileRepository()
-    private val settingsRepo      = SettingsRepository(application)
-    private val chatHistoryRepo   = ChatHistoryRepository(application)
-    private val aiBrain           = AiBrain(localFileRepository)
+    private val settingsRepo        = SettingsRepository(application)
+    private val chatHistoryRepo     = ChatHistoryRepository(application)
+    private val aiBrain             = AiBrain(localFileRepository)
 
     private val _uiState = MutableStateFlow(WorkspaceState())
     val uiState: StateFlow<WorkspaceState> = _uiState.asStateFlow()
 
     private var directoryLoadJob: Job? = null
-    private var agentJob: Job? = null
+    private var agentJob: Job?         = null
 
     init {
         _uiState.update {
@@ -54,11 +55,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         settingsRepo.saveApiKey(key)
         settingsRepo.saveSelectedModel(model)
         _uiState.update { it.copy(apiBaseUrl = baseUrl, apiKey = key, selectedModel = model) }
+        Toast.makeText(getApplication(), "✅ 配置已保存", Toast.LENGTH_SHORT).show()
     }
 
     fun saveThinkingEnabled(enabled: Boolean) {
         settingsRepo.saveThinkingEnabled(enabled)
         _uiState.update { it.copy(enableThinking = enabled) }
+    }
+
+    /** 一键切换服务商预设（来自 SettingsPanel 的快速切换按钮）*/
+    fun applyProvider(provider: ApiProvider) {
+        settingsRepo.applyProvider(provider)
+        _uiState.update { state ->
+            state.copy(
+                apiBaseUrl    = if (provider.baseUrl.isNotBlank()) provider.baseUrl else state.apiBaseUrl,
+                selectedModel = if (provider.defaultModel.isNotBlank()) provider.defaultModel else state.selectedModel
+            )
+        }
+        Toast.makeText(getApplication(), "已切换到 ${provider.displayName}", Toast.LENGTH_SHORT).show()
     }
 
     fun initWorkspace(path: String) {
@@ -129,8 +143,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val targetMsg      = msgs[messageIndex]
                         val updatedPatches = targetMsg.patches.toMutableList()
                         if (patchIndex in updatedPatches.indices) {
-                            updatedPatches[patchIndex] =
-                                updatedPatches[patchIndex].copy(state = PatchState.APPLIED)
+                            updatedPatches[patchIndex] = updatedPatches[patchIndex].copy(state = PatchState.APPLIED)
                             msgs[messageIndex] = targetMsg.copy(patches = updatedPatches)
                         }
                     }
@@ -152,8 +165,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val targetMsg      = msgs[messageIndex]
                 val updatedPatches = targetMsg.patches.toMutableList()
                 if (patchIndex in updatedPatches.indices) {
-                    updatedPatches[patchIndex] =
-                        updatedPatches[patchIndex].copy(state = PatchState.REJECTED)
+                    updatedPatches[patchIndex] = updatedPatches[patchIndex].copy(state = PatchState.REJECTED)
                     msgs[messageIndex] = targetMsg.copy(patches = updatedPatches)
                 }
             }
@@ -168,25 +180,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-        fun sendChatMessage(userText: String) {
+    fun sendChatMessage(userText: String) {
         val cleanedText = userText.trim()
         if (cleanedText.isBlank()) return
 
         val snapshot = _uiState.value
         if (snapshot.apiKey.isBlank()) {
-            appendMessage(ChatMessage("assistant", "❌ 请先配置 API Key"))
+            appendMessage(ChatMessage("assistant", "❌ 请先在「设置」中配置 API Key"))
             return
         }
 
-        // 🔥 修复点：把 firstOrNull() 改成 lastOrNull()
-        // 这样你在“资源”里点进哪个文件夹，AI 的大脑就只扫描哪个文件夹！
         val rootPath = snapshot.directoryStack.lastOrNull() ?: run {
-            appendMessage(ChatMessage("assistant", "❌ 请先选择项目根目录"))
+            appendMessage(ChatMessage("assistant", "❌ 请先在「资源」中选择项目根目录"))
             return
         }
-
-        
-
 
         agentJob?.cancel()
         appendMessage(ChatMessage("user", cleanedText))
@@ -194,10 +201,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         agentJob = viewModelScope.launch {
             _uiState.update { it.copy(isAgentWorking = true) }
+
             val history = snapshot.chatMessages
                 .filterNot { it.isLoading }
                 .filter { it.content.isNotBlank() }
                 .takeLast(30)
+
             try {
                 aiBrain.startConversation(
                     rootPath       = rootPath,
@@ -224,7 +233,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             }
                         }
                         is AgentEvent.Error ->
-                            updateLastMessage("❌ API 报错: ${event.message}", "", false, 0)
+                            updateLastMessage(event.message, "", false, 0)
                     }
                 }
             } catch (e: Exception) {
@@ -245,7 +254,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val messages = state.chatMessages.toMutableList()
             if (messages.isEmpty()) return@update state
             messages[messages.lastIndex] = messages.last().copy(
-                content = text, reasoningContent = reasoning, isLoading = isLoading, uploadChars = uploadChars
+                content          = text,
+                reasoningContent = reasoning,
+                isLoading        = isLoading,
+                uploadChars      = uploadChars
             )
             state.copy(chatMessages = messages)
         }
@@ -256,7 +268,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val messages = state.chatMessages.toMutableList()
             if (messages.isEmpty()) return@update state
             messages[messages.lastIndex] = messages.last().copy(
-                promptTokens = promptTokens, completionTokens = completionTokens
+                promptTokens     = promptTokens,
+                completionTokens = completionTokens
             )
             state.copy(chatMessages = messages)
         }
