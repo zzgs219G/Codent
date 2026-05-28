@@ -1,4 +1,9 @@
-// [文件路径: app/src/main/java/com/xixin/codent/ui/main/MainViewModel.kt]
+// 文件路径: app/src/main/java/com/xixin/codent/ui/main/MainViewModel.kt
+//
+// 重构内容：
+//   - 原来直接依赖 SafRepository 读写设置和聊天记录
+//   - 现在注入拆分后的 SettingsRepository + ChatHistoryRepository
+//   - SafRepository 只负责文件系统操作，职责清晰
 package com.xixin.codent.ui.main
 
 import android.app.Application
@@ -14,7 +19,9 @@ import com.xixin.codent.data.model.PatchItem
 import com.xixin.codent.data.model.PatchProposal
 import com.xixin.codent.data.model.PatchState
 import com.xixin.codent.data.model.WorkspaceState
+import com.xixin.codent.data.repository.ChatHistoryRepository
 import com.xixin.codent.data.repository.SafRepository
+import com.xixin.codent.data.repository.SettingsRepository
 import com.xixin.codent.wrapper.log.AppLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,47 +32,49 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
-    private val repository = SafRepository(application)
+
+    // ── 依赖注入（手动 DI，职责清晰）────────────────────────
+    private val safRepository     = SafRepository(application)
+    private val settingsRepo      = SettingsRepository(application)
+    private val chatHistoryRepo   = ChatHistoryRepository(application)
+    private val aiBrain           = AiBrain(safRepository)
+
     private val _uiState = MutableStateFlow(WorkspaceState())
     val uiState: StateFlow<WorkspaceState> = _uiState.asStateFlow()
 
-    private val aiBrain = AiBrain(repository)
     private var directoryLoadJob: Job? = null
     private var agentJob: Job? = null
 
     init {
-        val savedHistory = repository.loadChatHistory()
         _uiState.update {
             it.copy(
-                apiBaseUrl = repository.getApiBaseUrl(),
-                apiKey = repository.getApiKey(),
-                selectedModel = repository.getSelectedModel(),
-                enableThinking = repository.isThinkingEnabled(),
-                chatMessages = savedHistory
+                apiBaseUrl     = settingsRepo.getApiBaseUrl(),
+                apiKey         = settingsRepo.getApiKey(),
+                selectedModel  = settingsRepo.getSelectedModel(),
+                enableThinking = settingsRepo.isThinkingEnabled(),
+                chatMessages   = chatHistoryRepo.load()
             )
         }
     }
 
-    fun clearChat() {
-        _uiState.update { it.copy(chatMessages = emptyList(), pendingPatches = emptyList()) }
-        persistChatHistoryAsync()
-        viewModelScope.launch(Dispatchers.IO) { repository.clearChatHistory() }
-    }
+    // ── 设置 ──────────────────────────────────────────────────
 
     fun saveConfig(baseUrl: String, key: String, model: String) {
-        repository.saveApiBaseUrl(baseUrl)
-        repository.saveApiKey(key)
-        repository.saveSelectedModel(model)
+        settingsRepo.saveApiBaseUrl(baseUrl)
+        settingsRepo.saveApiKey(key)
+        settingsRepo.saveSelectedModel(model)
         _uiState.update { it.copy(apiBaseUrl = baseUrl, apiKey = key, selectedModel = model) }
     }
 
     fun saveThinkingEnabled(enabled: Boolean) {
-        repository.saveThinkingEnabled(enabled)
+        settingsRepo.saveThinkingEnabled(enabled)
         _uiState.update { it.copy(enableThinking = enabled) }
     }
 
+    // ── 工作区 ────────────────────────────────────────────────
+
     fun initWorkspace(uri: Uri) {
-        repository.takePersistableUriPermission(uri)
+        safRepository.takePersistableUriPermission(uri)
         _uiState.update { it.copy(directoryStack = listOf(uri)) }
         loadDirectory(uri)
     }
@@ -83,7 +92,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             loadDirectory(newStack.last())
             true
         } else {
-            _uiState.update { it.copy(directoryStack = emptyList(), currentFiles = emptyList(), selectedFile = null) }
+            _uiState.update {
+                it.copy(directoryStack = emptyList(), currentFiles = emptyList(), selectedFile = null)
+            }
             false
         }
     }
@@ -91,42 +102,59 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun openFile(fileNode: FileNode, onOpenComplete: () -> Unit) {
         viewModelScope.launch {
             _uiState.update { it.copy(selectedFile = fileNode, currentCodeContent = "正在加载...") }
-            val content = repository.readFileContent(fileNode.uri)
+            val content = safRepository.readFileContent(fileNode.uri)
             _uiState.update { it.copy(currentCodeContent = content) }
             onOpenComplete()
+        }
+    }
+
+    // ── 聊天记录管理 ──────────────────────────────────────────
+
+    fun clearChat() {
+        _uiState.update { it.copy(chatMessages = emptyList(), pendingPatches = emptyList()) }
+        viewModelScope.launch(Dispatchers.IO) {
+            chatHistoryRepo.clear()
         }
     }
 
     fun deleteMessage(index: Int) {
         if (index < 0) { clearChat(); return }
         if (index !in _uiState.value.chatMessages.indices) return
-        _uiState.update { state -> state.copy(chatMessages = state.chatMessages.subList(0, index).toList()) }
+        _uiState.update { state ->
+            state.copy(chatMessages = state.chatMessages.subList(0, index).toList())
+        }
         persistChatHistoryAsync()
     }
 
     fun editAndResendMessage(index: Int, newText: String) {
         val state = _uiState.value
         if (index !in state.chatMessages.indices || state.chatMessages[index].role != "user") return
-        _uiState.update { current -> current.copy(chatMessages = current.chatMessages.subList(0, index).toList()) }
+        _uiState.update { current ->
+            current.copy(chatMessages = current.chatMessages.subList(0, index).toList())
+        }
         sendChatMessage(newText)
     }
 
+    // ── 补丁操作 ──────────────────────────────────────────────
+
     fun confirmPatch(messageIndex: Int, patchIndex: Int, patch: PatchProposal) {
         viewModelScope.launch {
-            val success = repository.overwriteFile(patch.targetFileUri, patch.proposedContent)
+            val success = safRepository.overwriteFile(patch.targetFileUri, patch.proposedContent)
             if (success) {
                 AppLog.d("💾 [文件落盘]: ✅ 用户确认修改成功: ${patch.targetFileName}")
                 _uiState.update { state ->
                     val msgs = state.chatMessages.toMutableList()
                     if (messageIndex in msgs.indices) {
-                        val targetMsg = msgs[messageIndex]
+                        val targetMsg      = msgs[messageIndex]
                         val updatedPatches = targetMsg.patches.toMutableList()
                         if (patchIndex in updatedPatches.indices) {
-                            updatedPatches[patchIndex] = updatedPatches[patchIndex].copy(state = PatchState.APPLIED)
+                            updatedPatches[patchIndex] =
+                                updatedPatches[patchIndex].copy(state = PatchState.APPLIED)
                             msgs[messageIndex] = targetMsg.copy(patches = updatedPatches)
                         }
                     }
-                    val updatedContent = if (state.selectedFile?.uri == patch.targetFileUri) patch.proposedContent else state.currentCodeContent
+                    val updatedContent = if (state.selectedFile?.uri == patch.targetFileUri)
+                        patch.proposedContent else state.currentCodeContent
                     state.copy(chatMessages = msgs, currentCodeContent = updatedContent)
                 }
                 persistChatHistoryAsync()
@@ -141,10 +169,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { state ->
             val msgs = state.chatMessages.toMutableList()
             if (messageIndex in msgs.indices) {
-                val targetMsg = msgs[messageIndex]
+                val targetMsg      = msgs[messageIndex]
                 val updatedPatches = targetMsg.patches.toMutableList()
                 if (patchIndex in updatedPatches.indices) {
-                    updatedPatches[patchIndex] = updatedPatches[patchIndex].copy(state = PatchState.REJECTED)
+                    updatedPatches[patchIndex] =
+                        updatedPatches[patchIndex].copy(state = PatchState.REJECTED)
                     msgs[messageIndex] = targetMsg.copy(patches = updatedPatches)
                 }
             }
@@ -160,13 +189,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ── AI 调度 ───────────────────────────────────────────────
+
     fun sendChatMessage(userText: String) {
         val cleanedText = userText.trim()
         if (cleanedText.isBlank()) return
+
         val snapshot = _uiState.value
-        if (snapshot.apiKey.isBlank()) { appendMessage(ChatMessage("assistant", "❌ 请先配置 API Key")); return }
-        val rootUri = snapshot.directoryStack.firstOrNull()
-        if (rootUri == null) { appendMessage(ChatMessage("assistant", "❌ 请先选择项目根目录")); return }
+        if (snapshot.apiKey.isBlank()) {
+            appendMessage(ChatMessage("assistant", "❌ 请先配置 API Key"))
+            return
+        }
+        val rootUri = snapshot.directoryStack.firstOrNull() ?: run {
+            appendMessage(ChatMessage("assistant", "❌ 请先选择项目根目录"))
+            return
+        }
 
         agentJob?.cancel()
         appendMessage(ChatMessage("user", cleanedText))
@@ -174,42 +211,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         agentJob = viewModelScope.launch {
             _uiState.update { it.copy(isAgentWorking = true) }
-            
-            // 🔥 核心修正：直接过滤拿到纯净的 ChatMessage 列表，抛弃已经被干掉的 ApiMessage 转换桥梁
+
             val history = snapshot.chatMessages
-    .filterNot { it.isLoading }
-    .filter { it.content.isNotBlank() }
-    .takeLast(30)
+                .filterNot { it.isLoading }
+                .filter { it.content.isNotBlank() }
+                .takeLast(30)
+
             try {
                 aiBrain.startConversation(
-                    rootUri = rootUri,
-                    apiBaseUrl = snapshot.apiBaseUrl,
-                    apiKey = snapshot.apiKey,
-                    model = snapshot.selectedModel,
+                    rootUri       = rootUri,
+                    apiBaseUrl    = snapshot.apiBaseUrl,
+                    apiKey        = snapshot.apiKey,
+                    model         = snapshot.selectedModel,
                     enableThinking = snapshot.enableThinking,
-                    history = history,
-                    userText = cleanedText
+                    history       = history,
+                    userText      = cleanedText
                 ).collect { event ->
                     when (event) {
-                        is AgentEvent.ContentUpdate -> {
+                        is AgentEvent.ContentUpdate ->
                             updateLastMessage(event.text, event.reasoning, event.isLoading, event.uploadChars)
-                        }
-                        is AgentEvent.UsageUpdate -> {
+                        is AgentEvent.UsageUpdate ->
                             updateLastMessageUsage(event.promptTokens, event.completionTokens)
-                        }
                         is AgentEvent.PatchProposed -> {
                             _uiState.update { state ->
                                 val msgs = state.chatMessages.toMutableList()
                                 if (msgs.isEmpty()) return@update state
-                                val lastMsg = msgs.last()
+                                val lastMsg  = msgs.last()
                                 val newPatch = PatchItem(event.proposal, PatchState.PENDING)
                                 msgs[msgs.lastIndex] = lastMsg.copy(patches = lastMsg.patches + newPatch)
                                 state.copy(chatMessages = msgs)
                             }
                         }
-                        is AgentEvent.Error -> {
+                        is AgentEvent.Error ->
                             updateLastMessage("❌ API 报错: ${event.message}", "", false, 0)
-                        }
                     }
                 }
             } catch (e: Exception) {
@@ -221,16 +255,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ── 私有工具 ──────────────────────────────────────────────
+
     private fun appendMessage(message: ChatMessage) {
         _uiState.update { state -> state.copy(chatMessages = state.chatMessages + message) }
     }
 
-    private fun updateLastMessage(text: String, reasoning: String, isLoading: Boolean, uploadChars: Int) {
+    private fun updateLastMessage(
+        text: String, reasoning: String, isLoading: Boolean, uploadChars: Int
+    ) {
         _uiState.update { state ->
             val messages = state.chatMessages.toMutableList()
             if (messages.isEmpty()) return@update state
             messages[messages.lastIndex] = messages.last().copy(
-                content = text, reasoningContent = reasoning, isLoading = isLoading, uploadChars = uploadChars
+                content         = text,
+                reasoningContent = reasoning,
+                isLoading       = isLoading,
+                uploadChars     = uploadChars
             )
             state.copy(chatMessages = messages)
         }
@@ -240,14 +281,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { state ->
             val messages = state.chatMessages.toMutableList()
             if (messages.isEmpty()) return@update state
-            messages[messages.lastIndex] = messages.last().copy(promptTokens = promptTokens, completionTokens = completionTokens)
+            messages[messages.lastIndex] = messages.last().copy(
+                promptTokens     = promptTokens,
+                completionTokens = completionTokens
+            )
             state.copy(chatMessages = messages)
         }
     }
 
     private fun persistChatHistoryAsync() {
         val snapshot = _uiState.value.chatMessages.filterNot { it.isLoading }
-        viewModelScope.launch(Dispatchers.IO) { repository.saveChatHistory(snapshot) }
+        viewModelScope.launch(Dispatchers.IO) { chatHistoryRepo.save(snapshot) }
     }
 
     private fun loadDirectory(uri: Uri) {
@@ -255,7 +299,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         directoryLoadJob = viewModelScope.launch {
             _uiState.update { it.copy(isSafLoading = true, currentFiles = emptyList()) }
             try {
-                repository.listFilesFlow(uri).collect { files ->
+                safRepository.listFilesFlow(uri).collect { files ->
                     _uiState.update { it.copy(currentFiles = files, isSafLoading = false) }
                 }
             } catch (e: Exception) {
