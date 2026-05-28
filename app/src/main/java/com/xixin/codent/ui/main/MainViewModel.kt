@@ -1,13 +1,6 @@
-// 文件路径: app/src/main/java/com/xixin/codent/ui/main/MainViewModel.kt
-//
-// 重构内容：
-//   - 原来直接依赖 SafRepository 读写设置和聊天记录
-//   - 现在注入拆分后的 SettingsRepository + ChatHistoryRepository
-//   - SafRepository 只负责文件系统操作，职责清晰
 package com.xixin.codent.ui.main
 
 import android.app.Application
-import android.net.Uri
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -20,7 +13,7 @@ import com.xixin.codent.data.model.PatchProposal
 import com.xixin.codent.data.model.PatchState
 import com.xixin.codent.data.model.WorkspaceState
 import com.xixin.codent.data.repository.ChatHistoryRepository
-import com.xixin.codent.data.repository.SafRepository
+import com.xixin.codent.data.repository.LocalFileRepository
 import com.xixin.codent.data.repository.SettingsRepository
 import com.xixin.codent.wrapper.log.AppLog
 import kotlinx.coroutines.Dispatchers
@@ -33,11 +26,10 @@ import kotlinx.coroutines.launch
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    // ── 依赖注入（手动 DI，职责清晰）────────────────────────
-    private val safRepository     = SafRepository(application)
+    private val localFileRepository = LocalFileRepository()
     private val settingsRepo      = SettingsRepository(application)
     private val chatHistoryRepo   = ChatHistoryRepository(application)
-    private val aiBrain           = AiBrain(safRepository)
+    private val aiBrain           = AiBrain(localFileRepository)
 
     private val _uiState = MutableStateFlow(WorkspaceState())
     val uiState: StateFlow<WorkspaceState> = _uiState.asStateFlow()
@@ -57,8 +49,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ── 设置 ──────────────────────────────────────────────────
-
     fun saveConfig(baseUrl: String, key: String, model: String) {
         settingsRepo.saveApiBaseUrl(baseUrl)
         settingsRepo.saveApiKey(key)
@@ -71,17 +61,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(enableThinking = enabled) }
     }
 
-    // ── 工作区 ────────────────────────────────────────────────
-
-    fun initWorkspace(uri: Uri) {
-        safRepository.takePersistableUriPermission(uri)
-        _uiState.update { it.copy(directoryStack = listOf(uri)) }
-        loadDirectory(uri)
+    fun initWorkspace(path: String) {
+        _uiState.update { it.copy(directoryStack = listOf(path)) }
+        loadDirectory(path)
     }
 
-    fun navigateIntoFolder(uri: Uri) {
-        _uiState.update { it.copy(directoryStack = it.directoryStack + uri) }
-        loadDirectory(uri)
+    fun navigateIntoFolder(path: String) {
+        _uiState.update { it.copy(directoryStack = it.directoryStack + listOf(path)) }
+        loadDirectory(path)
     }
 
     fun navigateBack(): Boolean {
@@ -102,19 +89,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun openFile(fileNode: FileNode, onOpenComplete: () -> Unit) {
         viewModelScope.launch {
             _uiState.update { it.copy(selectedFile = fileNode, currentCodeContent = "正在加载...") }
-            val content = safRepository.readFileContent(fileNode.uri)
+            val content = localFileRepository.readFileContent(fileNode.path)
             _uiState.update { it.copy(currentCodeContent = content) }
             onOpenComplete()
         }
     }
 
-    // ── 聊天记录管理 ──────────────────────────────────────────
-
     fun clearChat() {
         _uiState.update { it.copy(chatMessages = emptyList(), pendingPatches = emptyList()) }
-        viewModelScope.launch(Dispatchers.IO) {
-            chatHistoryRepo.clear()
-        }
+        viewModelScope.launch(Dispatchers.IO) { chatHistoryRepo.clear() }
     }
 
     fun deleteMessage(index: Int) {
@@ -135,11 +118,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         sendChatMessage(newText)
     }
 
-    // ── 补丁操作 ──────────────────────────────────────────────
-
     fun confirmPatch(messageIndex: Int, patchIndex: Int, patch: PatchProposal) {
         viewModelScope.launch {
-            val success = safRepository.overwriteFile(patch.targetFileUri, patch.proposedContent)
+            val success = localFileRepository.overwriteFile(patch.targetFilePath, patch.proposedContent)
             if (success) {
                 AppLog.d("💾 [文件落盘]: ✅ 用户确认修改成功: ${patch.targetFileName}")
                 _uiState.update { state ->
@@ -153,7 +134,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             msgs[messageIndex] = targetMsg.copy(patches = updatedPatches)
                         }
                     }
-                    val updatedContent = if (state.selectedFile?.uri == patch.targetFileUri)
+                    val updatedContent = if (state.selectedFile?.path == patch.targetFilePath)
                         patch.proposedContent else state.currentCodeContent
                     state.copy(chatMessages = msgs, currentCodeContent = updatedContent)
                 }
@@ -165,7 +146,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun rejectPatch(messageIndex: Int, patchIndex: Int, patch: PatchProposal) {
-        AppLog.d("🚫 [文件落盘]: 用户拒绝了修改提议: ${patch.targetFileName}")
         _uiState.update { state ->
             val msgs = state.chatMessages.toMutableList()
             if (messageIndex in msgs.indices) {
@@ -183,13 +163,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun undoPatch(messageIndex: Int, patchIndex: Int, patch: PatchProposal) {
-        AppLog.i("⏪ [撤回功能开发中] 用户请求撤回对 ${patch.targetFileName} 的修改")
         viewModelScope.launch(Dispatchers.Main) {
             Toast.makeText(getApplication(), "撤回功能研发中...", Toast.LENGTH_SHORT).show()
         }
     }
-
-    // ── AI 调度 ───────────────────────────────────────────────
 
     fun sendChatMessage(userText: String) {
         val cleanedText = userText.trim()
@@ -200,7 +177,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             appendMessage(ChatMessage("assistant", "❌ 请先配置 API Key"))
             return
         }
-        val rootUri = snapshot.directoryStack.firstOrNull() ?: run {
+
+        val rootPath = snapshot.directoryStack.firstOrNull() ?: run {
             appendMessage(ChatMessage("assistant", "❌ 请先选择项目根目录"))
             return
         }
@@ -211,21 +189,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         agentJob = viewModelScope.launch {
             _uiState.update { it.copy(isAgentWorking = true) }
-
             val history = snapshot.chatMessages
                 .filterNot { it.isLoading }
                 .filter { it.content.isNotBlank() }
                 .takeLast(30)
-
             try {
                 aiBrain.startConversation(
-                    rootUri       = rootUri,
-                    apiBaseUrl    = snapshot.apiBaseUrl,
-                    apiKey        = snapshot.apiKey,
-                    model         = snapshot.selectedModel,
+                    rootPath       = rootPath,
+                    apiBaseUrl     = snapshot.apiBaseUrl,
+                    apiKey         = snapshot.apiKey,
+                    model          = snapshot.selectedModel,
                     enableThinking = snapshot.enableThinking,
-                    history       = history,
-                    userText      = cleanedText
+                    history        = history,
+                    userText       = cleanedText
                 ).collect { event ->
                     when (event) {
                         is AgentEvent.ContentUpdate ->
@@ -255,23 +231,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ── 私有工具 ──────────────────────────────────────────────
-
     private fun appendMessage(message: ChatMessage) {
         _uiState.update { state -> state.copy(chatMessages = state.chatMessages + message) }
     }
 
-    private fun updateLastMessage(
-        text: String, reasoning: String, isLoading: Boolean, uploadChars: Int
-    ) {
+    private fun updateLastMessage(text: String, reasoning: String, isLoading: Boolean, uploadChars: Int) {
         _uiState.update { state ->
             val messages = state.chatMessages.toMutableList()
             if (messages.isEmpty()) return@update state
             messages[messages.lastIndex] = messages.last().copy(
-                content         = text,
-                reasoningContent = reasoning,
-                isLoading       = isLoading,
-                uploadChars     = uploadChars
+                content = text, reasoningContent = reasoning, isLoading = isLoading, uploadChars = uploadChars
             )
             state.copy(chatMessages = messages)
         }
@@ -282,8 +251,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val messages = state.chatMessages.toMutableList()
             if (messages.isEmpty()) return@update state
             messages[messages.lastIndex] = messages.last().copy(
-                promptTokens     = promptTokens,
-                completionTokens = completionTokens
+                promptTokens = promptTokens, completionTokens = completionTokens
             )
             state.copy(chatMessages = messages)
         }
@@ -294,12 +262,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) { chatHistoryRepo.save(snapshot) }
     }
 
-    private fun loadDirectory(uri: Uri) {
+    private fun loadDirectory(path: String) {
         directoryLoadJob?.cancel()
         directoryLoadJob = viewModelScope.launch {
             _uiState.update { it.copy(isSafLoading = true, currentFiles = emptyList()) }
             try {
-                safRepository.listFilesFlow(uri).collect { files ->
+                localFileRepository.listFilesFlow(path).collect { files ->
                     _uiState.update { it.copy(currentFiles = files, isSafLoading = false) }
                 }
             } catch (e: Exception) {

@@ -6,7 +6,7 @@ import android.net.Uri
  * 补丁提议模型：代表 AI 对某个文件的修改建议
  */
 data class PatchProposal(
-    val targetFileUri: Uri,
+    val targetFilePath: String,
     val targetFileName: String,
     val originalContent: String,
     val diffText: String,
@@ -17,7 +17,7 @@ data class PatchProposal(
  * 全局 UI 状态源
  */
 data class WorkspaceState(
-    val directoryStack: List<Uri> = emptyList(),
+    val directoryStack: List<String> = emptyList(),
     val currentFiles: List<FileNode> = emptyList(),
     val isSafLoading: Boolean = false,
     val selectedFile: FileNode? = null,

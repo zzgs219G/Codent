@@ -1,7 +1,9 @@
-// [文件路径: app/src/main/java/com/xixin/codent/ui/main/MainScreen.kt]
 package com.xixin.codent.ui.main
 
+import android.content.Intent
 import android.net.Uri
+import android.os.Environment
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xixin.codent.ui.chat.ChatPanel
 import com.xixin.codent.ui.chat.ChatAction
@@ -35,10 +38,17 @@ enum class WorkspaceTab(val title: String, val icon: ImageVector) {
 fun MainScreen(viewModel: MainViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
     var currentTab by remember { mutableStateOf(WorkspaceTab.EXPLORER) }
+    val context = LocalContext.current
 
-    val folderPickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocumentTree()
-    ) { uri: Uri? -> uri?.let { viewModel.initWorkspace(it) } }
+    // 🔥 全新的超级权限请求发射器
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (Environment.isExternalStorageManager()) {
+            // 授权成功！直接写死加载 Android 默认存储根目录
+            viewModel.initWorkspace("/storage/emulated/0/")
+        }
+    }
 
     BackHandler(enabled = uiState.directoryStack.isNotEmpty() && currentTab == WorkspaceTab.EXPLORER) {
         viewModel.navigateBack()
@@ -74,9 +84,18 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             when (tab) {
                 WorkspaceTab.EXPLORER -> ExplorerPanel(
                     uiState = uiState,
-                    onInitWorkspace = { folderPickerLauncher.launch(null) },
+                    onInitWorkspace = { 
+                        // 🔥 修复点：用全新的权限判断逻辑，替换掉报错的 folderPickerLauncher
+                        if (Environment.isExternalStorageManager()) {
+                            viewModel.initWorkspace("/storage/emulated/0/") 
+                        } else {
+                            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                            intent.data = Uri.parse("package:${context.packageName}")
+                            permissionLauncher.launch(intent)
+                        }
+                    },
                     onNavigateBack = { viewModel.navigateBack() },
-                    onFolderClick = { viewModel.navigateIntoFolder(it) },
+                    onFolderClick = { path -> viewModel.navigateIntoFolder(path) },
                     onFileClick = { fileNode -> viewModel.openFile(fileNode) { currentTab = WorkspaceTab.PREVIEW } }
                 )
                 WorkspaceTab.PREVIEW -> EditorPanel(
@@ -88,37 +107,13 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     isAgentWorking = uiState.isAgentWorking,
                     pendingPatches = uiState.pendingPatches, 
                     onAction = { action ->
-                        // 🔥 核心修复点：这里的 when 必须和我们在 ChatPanel 里定义的 ChatAction 一一对应
                         when (action) {
                             is ChatAction.SendMessage -> viewModel.sendChatMessage(action.text)
-                            
-                            // 1. 确认补丁：传入三个参数 (消息索引, 补丁索引, 补丁对象)
-                            is ChatAction.ConfirmPatch -> viewModel.confirmPatch(
-                                action.messageIndex, 
-                                action.patchIndex, 
-                                action.patch
-                            )
-                            
-                            // 2. 拒绝补丁
-                            is ChatAction.RejectPatch -> viewModel.rejectPatch(
-                                action.messageIndex, 
-                                action.patchIndex, 
-                                action.patch
-                            )
-                            
-                            // 3. 🔥 补齐缺失的 UndoPatch 分支（编译器刚才报错就在这）
-                            is ChatAction.UndoPatch -> viewModel.undoPatch(
-                                action.messageIndex, 
-                                action.patchIndex, 
-                                action.patch
-                            )
-                            
+                            is ChatAction.ConfirmPatch -> viewModel.confirmPatch(action.messageIndex, action.patchIndex, action.patch)
+                            is ChatAction.RejectPatch -> viewModel.rejectPatch(action.messageIndex, action.patchIndex, action.patch)
+                            is ChatAction.UndoPatch -> viewModel.undoPatch(action.messageIndex, action.patchIndex, action.patch)
                             is ChatAction.DeleteMessage -> viewModel.deleteMessage(action.index)
-                            
-                            is ChatAction.EditMessage -> viewModel.editAndResendMessage(
-                                action.index, 
-                                action.text
-                            )
+                            is ChatAction.EditMessage -> viewModel.editAndResendMessage(action.index, action.text)
                         }
                     }
                 )

@@ -1,7 +1,5 @@
-// [修改] 修复了 TopAppBar 的颜色强制覆盖导致的“双拼色”断层
 package com.xixin.codent.ui.explorer
 
-import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,7 +24,7 @@ fun ExplorerPanel(
     uiState: WorkspaceState,
     onInitWorkspace: () -> Unit,
     onNavigateBack: () -> Unit,
-    onFolderClick: (Uri) -> Unit,
+    onFolderClick: (String) -> Unit, // 🔥 这里改成了 String
     onFileClick: (FileNode) -> Unit
 ) {
     if (uiState.directoryStack.isEmpty()) {
@@ -49,11 +47,11 @@ fun ExplorerPanel(
     } else {
         Column(modifier = Modifier.fillMaxSize()) {
             CenterAlignedTopAppBar(
-                title = { 
+                title = {
                     Text(
                         text = if (uiState.directoryStack.size > 1) "项目子模块" else "项目根目录",
                         style = MaterialTheme.typography.titleMedium
-                    ) 
+                    )
                 },
                 navigationIcon = {
                     if (uiState.directoryStack.size > 1) {
@@ -62,9 +60,7 @@ fun ExplorerPanel(
                         }
                     }
                 }
-                // 关键修复：去掉了 colors 属性，让 TopAppBar 和状态栏一起使用透明/背景色，融为一体
             )
-
             if (uiState.isSafLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
@@ -75,7 +71,8 @@ fun ExplorerPanel(
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(uiState.currentFiles, key = { it.uri.toString() }) { fileNode ->
+                    // 🔥 这里的 key 用了 it.path
+                    items(uiState.currentFiles, key = { it.path }) { fileNode -> 
                         ListItem(
                             headlineContent = { Text(fileNode.name) },
                             leadingContent = {
@@ -86,8 +83,10 @@ fun ExplorerPanel(
                                 )
                             },
                             modifier = Modifier.clickable {
-                                if (fileNode.isDirectory) onFolderClick(fileNode.uri)
-                                else onFileClick(fileNode)
+                                if (fileNode.isDirectory) 
+                                    onFolderClick(fileNode.path) // 🔥 这里把报错的 fileNode.uri 彻底改成了 fileNode.path
+                                else 
+                                    onFileClick(fileNode)
                             }
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant, thickness = 0.5.dp)
