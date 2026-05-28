@@ -1,0 +1,81 @@
+{
+  "allFiles": [
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/core/agent/CodePatcher.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 406,
+          "line": 14
+        },
+        "start": {
+          "column": 0,
+          "index": 406,
+          "line": 14
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/core/agent/AiBrain.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 5700,
+          "line": 142
+        },
+        "start": {
+          "column": 0,
+          "index": 5700,
+          "line": 142
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/build.gradle.kts",
+      "selection": {
+        "end": {
+          "column": 29,
+          "index": 3246,
+          "line": 105
+        },
+        "start": {
+          "column": 29,
+          "index": 3246,
+          "line": 105
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/gradle/libs.versions.toml",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 3217,
+          "line": 70
+        },
+        "start": {
+          "column": 0,
+          "index": 3217,
+          "line": 70
+        }
+      }
+    },
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/core/agent/AgentEvent.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        },
+        "start": {
+          "column": 0,
+          "index": 0,
+          "line": 0
+        }
+      }
+    }
+  ],
+  "projectPath": "/storage/emulated/0/CodeOnTheGoProjects/Codent",
+  "selectedFile": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/core/agent/AgentEvent.kt"
+}

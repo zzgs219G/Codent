@@ -3,23 +3,19 @@ package com.xixin.codent.core.agent
 import com.xixin.codent.data.model.ChatMessage as AppChatMessage
 import com.xixin.codent.data.repository.LocalFileRepository
 import com.xixin.codent.wrapper.log.AppLog
-import dev.langchain4j.data.message.AiMessage
-import dev.langchain4j.data.message.ChatMessage
-import dev.langchain4j.data.message.SystemMessage
-import dev.langchain4j.data.message.UserMessage
-import dev.langchain4j.memory.chat.MessageWindowChatMemory
-import dev.langchain4j.model.chat.response.ChatResponse
-import dev.langchain4j.model.openai.OpenAiStreamingChatModel
-import dev.langchain4j.service.AiServices
-import dev.langchain4j.service.TokenStream
-import dev.langchain4j.service.tool.ToolExecution
+import com.aallam.openai.api.BetaOpenAI
+import com.aallam.openai.api.chat.*
+import com.aallam.openai.api.core.Parameters // 🔥 修复点 1：引入原生的 Parameters 结构
+import com.aallam.openai.api.http.Timeout
+import com.aallam.openai.api.model.ModelId
+import com.aallam.openai.client.OpenAI
+import com.aallam.openai.client.OpenAIConfig
+import com.aallam.openai.client.OpenAIHost
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
-
-private interface CodentAgentService {
-    fun chat(message: String): TokenStream
-}
+import kotlinx.serialization.json.*
 
 class AiBrain(private val repository: LocalFileRepository) {
     private var cachedProjectTree: String? = null
@@ -32,6 +28,7 @@ class AiBrain(private val repository: LocalFileRepository) {
         onPatchReady = {}
     )
 
+    @OptIn(BetaOpenAI::class)
     fun startConversation(
         rootPath: String,
         apiBaseUrl: String,
@@ -41,7 +38,6 @@ class AiBrain(private val repository: LocalFileRepository) {
         history: List<AppChatMessage>,
         userText: String
     ): Flow<AgentEvent> = callbackFlow {
-        // 🔥 核心修改：增加最高级别的 try-catch 拦截，死保 App 不闪退
         try {
             val dangerKeywords = listOf("销毁项目", "删除所有", "rm -rf", "清空项目")
             if (dangerKeywords.any { userText.contains(it, ignoreCase = true) }) {
@@ -81,65 +77,206 @@ class AiBrain(private val repository: LocalFileRepository) {
                 4. 仅使用纯文本回复，禁止扮演用户。
             """.trimIndent()
 
-            val lcHistory: List<ChatMessage> = history.mapNotNull { msg ->
-                when (msg.role) {
-                    "user"      -> UserMessage.from(msg.content)
-                    "assistant" -> AiMessage.from(msg.content)
-                    else        -> null
+            val cleanHost = apiBaseUrl
+                .removePrefix("https://")
+                .removePrefix("http://")
+                .substringBefore("/")
+
+            val config = OpenAIConfig(
+                token = apiKey,
+                host = OpenAIHost(cleanHost),
+                timeout = Timeout(request = 60.seconds)
+            )
+            val openai = OpenAI(config)
+
+            val messages = mutableListOf<ChatMessage>().apply {
+                add(ChatMessage(role = ChatRole.System, content = systemPrompt))
+                history.forEach { msg ->
+                    val role = if (msg.role == "user") ChatRole.User else ChatRole.Assistant
+                    add(ChatMessage(role = role, content = msg.content))
                 }
+                add(ChatMessage(role = ChatRole.User, content = userText))
             }
 
-            val cleanBaseUrl = apiBaseUrl.removeSuffix("/chat/completions").trimEnd('/')
-            val streamingModel = OpenAiStreamingChatModel.builder()
-                .baseUrl(cleanBaseUrl)
-                .apiKey(apiKey)
-                .modelName(model)
-                .build()
+            // 🔥 修复点 2：显式声明 List<Tool> 类型，并用标准的 Tool/FunctionTool 构造函数替换无法识别的 ChatTool
+            val toolsList = listOf<Tool>(
+                Tool(
+                    type = ToolType.Function,
+                    function = FunctionTool(
+                        name = "readFile",
+                        description = "读取文件的指定行范围。必须同时指定 start_line 和 end_line。",
+                        parameters = Parameters(buildJsonObject {
+                            put("type", "object")
+                            putJsonObject("properties") {
+                                putJsonObject("path") { put("type", "string"); put("description", "文件相对路径") }
+                                putJsonObject("start_line") { put("type", "integer"); put("description", "起始行号") }
+                                putJsonObject("end_line") { put("type", "integer"); put("description", "结束行号") }
+                            }
+                            putJsonArray("required") { add("path"); add("start_line"); add("end_line") }
+                        })
+                    )
+                ),
+                Tool(
+                    type = ToolType.Function,
+                    function = FunctionTool(
+                        name = "searchKeyword",
+                        description = "全局搜索代码关键字，返回带行号的匹配片段，最多返回 8 处结果。",
+                        parameters = Parameters(buildJsonObject {
+                            put("type", "object")
+                            putJsonObject("properties") {
+                                putJsonObject("keyword") { put("type", "string"); put("description", "要搜索的关键字") }
+                            }
+                            putJsonArray("required") { add("keyword") }
+                        })
+                    )
+                ),
+                Tool(
+                    type = ToolType.Function,
+                    function = FunctionTool(
+                        name = "findFile",
+                        description = "通过文件名在整个项目中查找文件的准确相对路径。",
+                        parameters = Parameters(buildJsonObject {
+                            put("type", "object")
+                            putJsonObject("properties") {
+                                putJsonObject("file_name") { put("type", "string"); put("description", "文件名") }
+                            }
+                            putJsonArray("required") { add("file_name") }
+                        })
+                    )
+                ),
+                Tool(
+                    type = ToolType.Function,
+                    function = FunctionTool(
+                        name = "listDirectory",
+                        description = "列出指定目录的直接子文件和子目录，根目录传空字符串。",
+                        parameters = Parameters(buildJsonObject {
+                            put("type", "object")
+                            putJsonObject("properties") {
+                                putJsonObject("path") { put("type", "string"); put("description", "相对于项目根目录的路径") }
+                            }
+                            putJsonArray("required") { add("path") }
+                        })
+                    )
+                ),
+                Tool(
+                    type = ToolType.Function,
+                    function = FunctionTool(
+                        name = "applyPatch",
+                        description = "精确替换文件中的一段代码。",
+                        parameters = Parameters(buildJsonObject {
+                            put("type", "object")
+                            putJsonObject("properties") {
+                                putJsonObject("path") { put("type", "string"); put("description", "文件相对路径") }
+                                putJsonObject("search_string") { put("type", "string"); put("description", "原始代码片段") }
+                                putJsonObject("replace_string") { put("type", "string"); put("description", "新代码片段") }
+                            }
+                            putJsonArray("required") { add("path"); add("search_string"); add("replace_string") }
+                        })
+                    )
+                ),
+                Tool(
+                    type = ToolType.Function,
+                    function = FunctionTool(
+                        name = "createFile",
+                        description = "新建文件，或在用户确认后覆盖已有文件。",
+                        parameters = Parameters(buildJsonObject {
+                            put("type", "object")
+                            putJsonObject("properties") {
+                                putJsonObject("path") { put("type", "string"); put("description", "文件相对路径") }
+                                putJsonObject("content") { put("type", "string"); put("description", "文件完整内容") }
+                            }
+                            putJsonArray("required") { add("path"); add("content") }
+                        })
+                    )
+                )
+            )
 
-            val memory = MessageWindowChatMemory.withMaxMessages(60)
-            memory.add(SystemMessage.from(systemPrompt))
-            lcHistory.forEach { memory.add(it) }
+            val request = ChatCompletionRequest(
+                model = ModelId(model),
+                messages = messages,
+                tools = toolsList
+            )
 
-            val agentService = AiServices.builder(CodentAgentService::class.java)
-                .streamingChatModel(streamingModel)
-                .tools(agentTools)
-                .chatMemory(memory)
-                .build()
+            var accumulatedText = ""
+            var accumulatedReasoning = ""
+            
+            val toolNameMap = mutableMapOf<Int, String>()
+            val toolArgumentsMap = mutableMapOf<Int, StringBuilder>()
 
-            var accumulatedText       = ""
-            var accumulatedReasoning  = ""
-            var totalPromptTokens     = 0
-            var totalCompletionTokens = 0
-
-            agentService.chat(userText)
-                .onPartialResponse { token ->
+            openai.chatCompletions(request).collect { chunk ->
+                val choice = chunk.choices.firstOrNull() ?: return@collect
+                // 🔥 修复点 3：用 ?. 运算符处理可能为空的 delta 碎片
+                val delta = choice.delta ?: return@collect 
+                
+                // 收集流式文本
+                delta.content?.let { token ->
                     accumulatedText += token
                     trySend(AgentEvent.ContentUpdate(accumulatedText, accumulatedReasoning, true, 0))
                 }
-                .onToolExecuted { toolExecution: ToolExecution ->
-                    val tip = "> 🤖 正在调度工具: ${toolExecution.request().name()} ..."
+
+                // 🔥 修复点 4：移除了不存在的 ToolCallDelta，直接对标准的 ToolCall 列表进行安全空校验和收集
+                delta.toolCalls?.forEach { toolCall ->
+                    val idx = toolCall.index ?: 0
+                    toolCall.function?.name?.let { toolNameMap[idx] = it }
+                    toolCall.function?.arguments?.let { argToken ->
+                        toolArgumentsMap.getOrPut(idx) { StringBuilder() }.append(argToken)
+                    }
+                }
+            }
+
+            if (toolNameMap.isNotEmpty()) {
+                for ((idx, name) in toolNameMap) {
+                    val argsStr = toolArgumentsMap[idx]?.toString() ?: "{}"
+                    val argsJson = try { Json.parseToJsonElement(argsStr).jsonObject } catch (e: Exception) { JsonObject(emptyMap()) }
+                    
+                    val tip = "> 🤖 正在调度本地工具: $name ..."
                     accumulatedReasoning += if (accumulatedReasoning.isNotEmpty()) "\n\n$tip" else tip
                     trySend(AgentEvent.ContentUpdate(accumulatedText, accumulatedReasoning, true, 0))
-                }
-                .onCompleteResponse { response: ChatResponse ->
-                    response.tokenUsage()?.let { usage ->
-                        totalPromptTokens     += usage.inputTokenCount()  ?: 0
-                        totalCompletionTokens += usage.outputTokenCount() ?: 0
-                        trySend(AgentEvent.UsageUpdate(totalPromptTokens, totalCompletionTokens))
+
+                    val result = when (name) {
+                        "readFile" -> {
+                            val path = argsJson["path"]?.jsonPrimitive?.content ?: ""
+                            val start = argsJson["start_line"]?.jsonPrimitive?.int ?: 1
+                            val end = argsJson["end_line"]?.jsonPrimitive?.int ?: 1
+                            agentTools.readFile(path, start, end)
+                        }
+                        "searchKeyword" -> {
+                            val keyword = argsJson["keyword"]?.jsonPrimitive?.content ?: ""
+                            agentTools.searchKeyword(keyword)
+                        }
+                        "findFile" -> {
+                            val fileName = argsJson["file_name"]?.jsonPrimitive?.content ?: ""
+                            agentTools.findFile(fileName)
+                        }
+                        "listDirectory" -> {
+                            val path = argsJson["path"]?.jsonPrimitive?.content ?: ""
+                            agentTools.listDirectory(path)
+                        }
+                        "applyPatch" -> {
+                            val path = argsJson["path"]?.jsonPrimitive?.content ?: ""
+                            val search = argsJson["search_string"]?.jsonPrimitive?.content ?: ""
+                            val replace = argsJson["replace_string"]?.jsonPrimitive?.content ?: ""
+                            agentTools.applyPatch(path, search, replace)
+                        }
+                        "createFile" -> {
+                            val path = argsJson["path"]?.jsonPrimitive?.content ?: ""
+                            val content = argsJson["content"]?.jsonPrimitive?.content ?: ""
+                            agentTools.createFile(path, content)
+                        }
+                        else -> "错误：未知工具名称"
                     }
-                    trySend(AgentEvent.ContentUpdate(accumulatedText, accumulatedReasoning, false, 0))
-                    close()
+
+                    accumulatedReasoning += "\n> ⚙️ 工具执行返回结果:\n$result"
+                    trySend(AgentEvent.ContentUpdate(accumulatedText, accumulatedReasoning, true, 0))
                 }
-                .onError { error ->
-                    trySend(AgentEvent.Error(error.message ?: "未知错误"))
-                    close(error)
-                }
-                .start()
-                
+            }
+
+            trySend(AgentEvent.ContentUpdate(accumulatedText, accumulatedReasoning, false, 0))
+            close()
+
         } catch (e: Throwable) {
-            // 🔥 拦截到了！把原本会导致闪退的异常，化作界面上的一条红色警告
-            AppLog.e("AiBrain 致命崩溃: ${e.stackTraceToString()}")
-            trySend(AgentEvent.Error("核心调度崩溃: ${e.message ?: e.javaClass.simpleName}"))
+            AppLog.e("Kotlin AI 核心调度崩溃: ${e.stackTraceToString()}")
+            trySend(AgentEvent.Error("核心调度异常: ${e.localizedMessage ?: e.javaClass.simpleName}"))
             close(e)
         }
 

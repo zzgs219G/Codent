@@ -87,7 +87,6 @@ android {
             pickFirsts += "**/root_package/0_.knm"
             pickFirsts += "**/package_androidx/0_androidx.knm"
             pickFirsts += "META-INF/kotlin-project-structure-metadata.json"
-            pickFirsts += "META-INF/services/dev.langchain4j.http.client.HttpClientBuilderFactory"
         
             merges += "**/default/manifest"
         }
@@ -102,18 +101,12 @@ dependencies {
     
     implementation(libs.compose.markdown)
 
-    // LangChain4j，强制统一 okhttp 版本防止 Android 运行时冲突
-    implementation(libs.langchain4j.core)
-implementation(libs.langchain4j.main) {
-    exclude(group = "com.squareup.okhttp3", module = "okhttp")
-}
-implementation(libs.langchain4j.openai) {
-    exclude(group = "com.squareup.okhttp3", module = "okhttp")
-}
-    
-    // 你手动指定一个高版本，强制统一
-    
+    // 🔥 切换为纯正的 Kotlin 专属 AI 驱动客户端与 Ktor 网络引擎
+    implementation(libs.openai.kotlin.client)
+    implementation(libs.ktor.client.okhttp)
+
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    
     implementation("androidx.documentfile:documentfile:1.0.1")
     implementation(libs.okio)
     implementation(libs.javaDiffUtils)
