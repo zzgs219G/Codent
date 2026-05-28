@@ -70,7 +70,8 @@ android {
         jvmTarget = "17"
         // 开启 Compose 强跳过模式，这对移动端本地编译的 App 性能提升巨大
         freeCompilerArgs += listOf(
-            "-P", "plugin:androidx.compose.compiler.plugins.kotlin:strongSkipping=true"
+            "-P", "plugin:androidx.compose.compiler.plugins.kotlin:strongSkipping=true",
+            "-java-parameters"
         )
     }
 
@@ -86,7 +87,8 @@ android {
             pickFirsts += "**/root_package/0_.knm"
             pickFirsts += "**/package_androidx/0_androidx.knm"
             pickFirsts += "META-INF/kotlin-project-structure-metadata.json"
-            
+            pickFirsts += "META-INF/services/dev.langchain4j.http.client.HttpClientBuilderFactory"
+        
             merges += "**/default/manifest"
         }
     }
@@ -102,13 +104,18 @@ dependencies {
 
     // LangChain4j，强制统一 okhttp 版本防止 Android 运行时冲突
     implementation(libs.langchain4j.core)
-implementation(libs.langchain4j.main) {
-    exclude(group = "com.squareup.okhttp3", module = "okhttp")
-}
-implementation(libs.langchain4j.openai) {
-    exclude(group = "com.squareup.okhttp3", module = "okhttp")
-}
-implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation(libs.langchain4j.main) {
+        exclude(group = "com.squareup.okhttp3", module = "okhttp")
+    }
+    implementation(libs.langchain4j.openai) {
+        // 这一行必须写，否则 LangChain4j 会把它内部自带的旧版 okhttp 拽进来
+        exclude(group = "com.squareup.okhttp3", module = "okhttp")
+        exclude(group = "dev.langchain4j", module = "langchain4j-http-client-jdk")
+    }
+    
+    // 你手动指定一个高版本，强制统一
+    
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.documentfile:documentfile:1.0.1")
     implementation(libs.okio)
     implementation(libs.javaDiffUtils)
