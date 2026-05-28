@@ -1,42 +1,36 @@
-// 文件路径: app/src/main/java/com/xixin/codent/core/agent/AiBrain.kt
 package com.xixin.codent.core.agent
 
-import android.net.Uri
 import com.xixin.codent.data.model.ChatMessage as AppChatMessage
-import com.xixin.codent.data.repository.SafRepository
+import com.xixin.codent.data.repository.LocalFileRepository
 import com.xixin.codent.wrapper.log.AppLog
-import dev.langchain4j.data.message.AiMessage
-import dev.langchain4j.data.message.ChatMessage
-import dev.langchain4j.data.message.SystemMessage
-import dev.langchain4j.data.message.UserMessage
-import dev.langchain4j.memory.chat.MessageWindowChatMemory
-import dev.langchain4j.model.chat.response.ChatResponse          // ← 1.0.0 新包路径
-import dev.langchain4j.model.openai.OpenAiStreamingChatModel
-import dev.langchain4j.service.AiServices
-import dev.langchain4j.service.TokenStream
-import dev.langchain4j.service.tool.ToolExecution                  // ← onToolExecuted 参数类型
+import com.aallam.openai.api.BetaOpenAI
+import com.aallam.openai.api.chat.*
+import com.aallam.openai.api.core.Parameters // 🔥 修复点 1：引入原生的 Parameters 结构
+import com.aallam.openai.api.http.Timeout
+import com.aallam.openai.api.model.ModelId
+import com.aallam.openai.client.OpenAI
+import com.aallam.openai.client.OpenAIConfig
+import com.aallam.openai.client.OpenAIHost
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.serialization.json.*
 
-private interface CodentAgentService {
-    fun chat(message: String): TokenStream
-}
-
-class AiBrain(private val repository: SafRepository) {
-
+class AiBrain(private val repository: LocalFileRepository) {
     private var cachedProjectTree: String? = null
-    private var lastRootUriString: String? = null
+    private var lastRootPath: String? = null
     private var lastCacheTimeMs: Long = 0L
 
     private val agentTools = AgentTools(
         repository   = repository,
-        rootUri      = Uri.EMPTY,
+        rootPath     = "",
         onPatchReady = {}
     )
 
+    @OptIn(BetaOpenAI::class)
     fun startConversation(
-        rootUri: Uri,
+        rootPath: String,
         apiBaseUrl: String,
         apiKey: String,
         model: String,
@@ -44,127 +38,247 @@ class AiBrain(private val repository: SafRepository) {
         history: List<AppChatMessage>,
         userText: String
     ): Flow<AgentEvent> = callbackFlow {
-
-        val dangerKeywords = listOf("销毁项目", "删除所有", "rm -rf", "清空项目")
-        if (dangerKeywords.any { userText.contains(it, ignoreCase = true) }) {
-            trySend(AgentEvent.Error(DANGER_ZONE))
-            close()
-            return@callbackFlow
-        }
-
-        val now       = System.currentTimeMillis()
-        val uriString = rootUri.toString()
-        val projectTree = if (
-            cachedProjectTree != null &&
-            lastRootUriString == uriString &&
-            now - lastCacheTimeMs < 5 * 60 * 1000L
-        ) {
-            AppLog.d("🌳 [命中缓存] 复用目录树")
-            cachedProjectTree!!
-        } else {
-            repository.generateProjectTree(rootUri, maxDepth = 12).also {
-                cachedProjectTree  = it
-                lastRootUriString  = uriString
-                lastCacheTimeMs    = now
-                AppLog.d("🌳 [目录树生成完毕] 长度=${it.length}")
-            }
-        }
-
-        agentTools.rootUri      = rootUri
-        agentTools.onPatchReady = { proposal -> trySend(AgentEvent.PatchProposed(proposal)) }
-
-        val systemPrompt = """
-            你是一个顶级 Android 架构师 Agent。
-            【项目全局透视图 (含文件大小)】：
-            $projectTree
-            【红线警告与执行规范】：
-            1. 【全图视野】：我已经把项目文件树交给你了，寻找文件时必须优先对照上面的目录树！
-            2. 【大小感知与禁止问路】：观察文件名括号中的大小（如 30.5KB）。1KB 约等于 30-40 行代码。绝对严禁调用 find_file 查找已知文件！地图中的 . 代表基准路径。你要找的文件绝对路径 = 基准路径 + /文件名。你必须在脑解中完成拼接，并直接调用 read_file！
-            3. 【大胃王读取 (省钱关键)】：严禁进行小于 100 行的"试探性"读取！如果文件 < 3KB，请直接 read_file(1, 100) 一次性读完。如果文件较大，首轮读取建议范围 1-300 行。目标是在 2 轮内解决战斗。
-            4. 【静默执行与强制总结】：调用工具时直接输出 JSON。但是，在执行完所有的修改（apply_patch / create_file）后，你必须在最后一轮输出一段中文，总结你修改了什么，让用户在界面上点击确认。严禁静默结束！
-            5. 【精准替换】：修改代码 apply_patch 时 search_string 必须完全复制原文。
-            6. 【连击协同】：你具备一次性修改多个文件的能力。如果需求涉及多个类，请连续调用多次 apply_patch。
-            7. 【单次上限】：单次读取文件 read_file 不得超过 800 行。
-            8. 仅使用纯文本回复，禁止扮演用户。
-        """.trimIndent()
-
-        val lcHistory: List<ChatMessage> = history.mapNotNull { msg ->
-            when (msg.role) {
-                "user"      -> UserMessage.from(msg.content)
-                "assistant" -> AiMessage.from(msg.content)
-                else        -> null
-            }
-        }
-
-        val cleanBaseUrl = apiBaseUrl
-            .removeSuffix("/chat/completions")
-            .trimEnd('/')
-
-        val streamingModel = OpenAiStreamingChatModel.builder()
-            .baseUrl(cleanBaseUrl)
-            .apiKey(apiKey)
-            .modelName(model)
-            .build()
-
-        val memory = MessageWindowChatMemory.withMaxMessages(60)
-        memory.add(SystemMessage.from(systemPrompt))
-        lcHistory.forEach { memory.add(it) }
-
-        val agentService = AiServices.builder(CodentAgentService::class.java)
-            .streamingChatModel(streamingModel)   // ← 1.0.0 新方法名
-            .tools(agentTools)
-            .chatMemory(memory)
-            .build()
-
-        var accumulatedText       = ""
-        var accumulatedReasoning  = ""
-        var totalPromptTokens     = 0
-        var totalCompletionTokens = 0
-
-        AppLog.d("AiBrain: 开始对话 | model=$model | user=${userText.take(60)}")
-
-        agentService.chat(userText)
-            .onPartialResponse { token ->              // ← 替换废弃的 onNext
-                accumulatedText += token
-                trySend(AgentEvent.ContentUpdate(
-                    text        = accumulatedText,
-                    reasoning   = accumulatedReasoning,
-                    isLoading   = true,
-                    uploadChars = 0
-                ))
-            }
-            .onToolExecuted { toolExecution: ToolExecution ->   // ← 显式类型，消灭歧义
-                val tip = "> 🤖 正在调度工具: ${toolExecution.request().name()} ..."
-                accumulatedReasoning += if (accumulatedReasoning.isNotEmpty()) "\n\n$tip" else tip
-                AppLog.d("🔧 [Tool 执行完毕]: ${toolExecution.request().name()}")
-                trySend(AgentEvent.ContentUpdate(
-                    text        = accumulatedText,
-                    reasoning   = accumulatedReasoning,
-                    isLoading   = true,
-                    uploadChars = 0
-                ))
-            }
-            .onCompleteResponse { response: ChatResponse ->      // ← 新类型 ChatResponse
-                response.tokenUsage()?.let { usage ->
-                    totalPromptTokens     += usage.inputTokenCount()  ?: 0
-                    totalCompletionTokens += usage.outputTokenCount() ?: 0
-                    AppLog.d("✅ 对话完成 | prompt=$totalPromptTokens | completion=$totalCompletionTokens")
-                    trySend(AgentEvent.UsageUpdate(totalPromptTokens, totalCompletionTokens))
-                }
-                trySend(AgentEvent.ContentUpdate(
-                    text        = accumulatedText,
-                    reasoning   = accumulatedReasoning,
-                    isLoading   = false,
-                    uploadChars = 0
-                ))
+        try {
+            val dangerKeywords = listOf("销毁项目", "删除所有", "rm -rf", "清空项目")
+            if (dangerKeywords.any { userText.contains(it, ignoreCase = true) }) {
+                trySend(AgentEvent.Error(DANGER_ZONE))
                 close()
+                return@callbackFlow
             }
-            .onError { error ->
-                AppLog.e("❌ AiBrain 流错误: ${error.message}")
-                trySend(AgentEvent.Error(error.message ?: "未知错误"))
-                close(error)
+
+            val now = System.currentTimeMillis()
+            val projectTree = if (
+                cachedProjectTree != null &&
+                lastRootPath == rootPath &&
+                now - lastCacheTimeMs < 5 * 60 * 1000L
+            ) {
+                AppLog.d("🌳 [命中缓存] 复用目录树")
+                cachedProjectTree!!
+            } else {
+                repository.generateProjectTree(rootPath, maxDepth = 12).also {
+                    cachedProjectTree  = it
+                    lastRootPath       = rootPath
+                    lastCacheTimeMs    = now
+                    AppLog.d("🌳 [目录树生成完毕] 长度=${it.length}")
+                }
             }
-            .start()
+
+            agentTools.rootPath = rootPath
+            agentTools.onPatchReady = { proposal -> trySend(AgentEvent.PatchProposed(proposal)) }
+
+            val systemPrompt = """
+                你是一个顶级 Android 架构师 Agent。
+                【项目全局透视图 (含文件大小)】：
+                $projectTree
+                【红线警告与执行规范】：
+                1. 【全图视野】：我已经把项目文件树交给你了，寻找文件时必须优先对照上面的目录树！
+                2. 【大小感知与禁止问路】：严禁调用 find_file 查找已知文件！你要找的文件绝对路径 = 根目录 + /文件名。直接调用 read_file！
+                3. 【静默执行与强制总结】：调用工具时直接输出 JSON。全部改完后，必须在最后一轮输出一段中文总结。
+                4. 仅使用纯文本回复，禁止扮演用户。
+            """.trimIndent()
+
+            val cleanHost = apiBaseUrl
+                .removePrefix("https://")
+                .removePrefix("http://")
+                .substringBefore("/")
+
+            val config = OpenAIConfig(
+                token = apiKey,
+                host = OpenAIHost(cleanHost),
+                timeout = Timeout(request = 60.seconds)
+            )
+            val openai = OpenAI(config)
+
+            val messages = mutableListOf<ChatMessage>().apply {
+                add(ChatMessage(role = ChatRole.System, content = systemPrompt))
+                history.forEach { msg ->
+                    val role = if (msg.role == "user") ChatRole.User else ChatRole.Assistant
+                    add(ChatMessage(role = role, content = msg.content))
+                }
+                add(ChatMessage(role = ChatRole.User, content = userText))
+            }
+
+            // 🔥 修复点 2：显式声明 List<Tool> 类型，并用标准的 Tool/FunctionTool 构造函数替换无法识别的 ChatTool
+            val toolsList = listOf<Tool>(
+                Tool(
+                    type = ToolType.Function,
+                    function = FunctionTool(
+                        name = "readFile",
+                        description = "读取文件的指定行范围。必须同时指定 start_line 和 end_line。",
+                        parameters = Parameters(buildJsonObject {
+                            put("type", "object")
+                            putJsonObject("properties") {
+                                putJsonObject("path") { put("type", "string"); put("description", "文件相对路径") }
+                                putJsonObject("start_line") { put("type", "integer"); put("description", "起始行号") }
+                                putJsonObject("end_line") { put("type", "integer"); put("description", "结束行号") }
+                            }
+                            putJsonArray("required") { add("path"); add("start_line"); add("end_line") }
+                        })
+                    )
+                ),
+                Tool(
+                    type = ToolType.Function,
+                    function = FunctionTool(
+                        name = "searchKeyword",
+                        description = "全局搜索代码关键字，返回带行号的匹配片段，最多返回 8 处结果。",
+                        parameters = Parameters(buildJsonObject {
+                            put("type", "object")
+                            putJsonObject("properties") {
+                                putJsonObject("keyword") { put("type", "string"); put("description", "要搜索的关键字") }
+                            }
+                            putJsonArray("required") { add("keyword") }
+                        })
+                    )
+                ),
+                Tool(
+                    type = ToolType.Function,
+                    function = FunctionTool(
+                        name = "findFile",
+                        description = "通过文件名在整个项目中查找文件的准确相对路径。",
+                        parameters = Parameters(buildJsonObject {
+                            put("type", "object")
+                            putJsonObject("properties") {
+                                putJsonObject("file_name") { put("type", "string"); put("description", "文件名") }
+                            }
+                            putJsonArray("required") { add("file_name") }
+                        })
+                    )
+                ),
+                Tool(
+                    type = ToolType.Function,
+                    function = FunctionTool(
+                        name = "listDirectory",
+                        description = "列出指定目录的直接子文件和子目录，根目录传空字符串。",
+                        parameters = Parameters(buildJsonObject {
+                            put("type", "object")
+                            putJsonObject("properties") {
+                                putJsonObject("path") { put("type", "string"); put("description", "相对于项目根目录的路径") }
+                            }
+                            putJsonArray("required") { add("path") }
+                        })
+                    )
+                ),
+                Tool(
+                    type = ToolType.Function,
+                    function = FunctionTool(
+                        name = "applyPatch",
+                        description = "精确替换文件中的一段代码。",
+                        parameters = Parameters(buildJsonObject {
+                            put("type", "object")
+                            putJsonObject("properties") {
+                                putJsonObject("path") { put("type", "string"); put("description", "文件相对路径") }
+                                putJsonObject("search_string") { put("type", "string"); put("description", "原始代码片段") }
+                                putJsonObject("replace_string") { put("type", "string"); put("description", "新代码片段") }
+                            }
+                            putJsonArray("required") { add("path"); add("search_string"); add("replace_string") }
+                        })
+                    )
+                ),
+                Tool(
+                    type = ToolType.Function,
+                    function = FunctionTool(
+                        name = "createFile",
+                        description = "新建文件，或在用户确认后覆盖已有文件。",
+                        parameters = Parameters(buildJsonObject {
+                            put("type", "object")
+                            putJsonObject("properties") {
+                                putJsonObject("path") { put("type", "string"); put("description", "文件相对路径") }
+                                putJsonObject("content") { put("type", "string"); put("description", "文件完整内容") }
+                            }
+                            putJsonArray("required") { add("path"); add("content") }
+                        })
+                    )
+                )
+            )
+
+            val request = ChatCompletionRequest(
+                model = ModelId(model),
+                messages = messages,
+                tools = toolsList
+            )
+
+            var accumulatedText = ""
+            var accumulatedReasoning = ""
+            
+            val toolNameMap = mutableMapOf<Int, String>()
+            val toolArgumentsMap = mutableMapOf<Int, StringBuilder>()
+
+            openai.chatCompletions(request).collect { chunk ->
+                val choice = chunk.choices.firstOrNull() ?: return@collect
+                // 🔥 修复点 3：用 ?. 运算符处理可能为空的 delta 碎片
+                val delta = choice.delta ?: return@collect 
+                
+                // 收集流式文本
+                delta.content?.let { token ->
+                    accumulatedText += token
+                    trySend(AgentEvent.ContentUpdate(accumulatedText, accumulatedReasoning, true, 0))
+                }
+
+                // 🔥 修复点 4：移除了不存在的 ToolCallDelta，直接对标准的 ToolCall 列表进行安全空校验和收集
+                delta.toolCalls?.forEach { toolCall ->
+                    val idx = toolCall.index ?: 0
+                    toolCall.function?.name?.let { toolNameMap[idx] = it }
+                    toolCall.function?.arguments?.let { argToken ->
+                        toolArgumentsMap.getOrPut(idx) { StringBuilder() }.append(argToken)
+                    }
+                }
+            }
+
+            if (toolNameMap.isNotEmpty()) {
+                for ((idx, name) in toolNameMap) {
+                    val argsStr = toolArgumentsMap[idx]?.toString() ?: "{}"
+                    val argsJson = try { Json.parseToJsonElement(argsStr).jsonObject } catch (e: Exception) { JsonObject(emptyMap()) }
+                    
+                    val tip = "> 🤖 正在调度本地工具: $name ..."
+                    accumulatedReasoning += if (accumulatedReasoning.isNotEmpty()) "\n\n$tip" else tip
+                    trySend(AgentEvent.ContentUpdate(accumulatedText, accumulatedReasoning, true, 0))
+
+                    val result = when (name) {
+                        "readFile" -> {
+                            val path = argsJson["path"]?.jsonPrimitive?.content ?: ""
+                            val start = argsJson["start_line"]?.jsonPrimitive?.int ?: 1
+                            val end = argsJson["end_line"]?.jsonPrimitive?.int ?: 1
+                            agentTools.readFile(path, start, end)
+                        }
+                        "searchKeyword" -> {
+                            val keyword = argsJson["keyword"]?.jsonPrimitive?.content ?: ""
+                            agentTools.searchKeyword(keyword)
+                        }
+                        "findFile" -> {
+                            val fileName = argsJson["file_name"]?.jsonPrimitive?.content ?: ""
+                            agentTools.findFile(fileName)
+                        }
+                        "listDirectory" -> {
+                            val path = argsJson["path"]?.jsonPrimitive?.content ?: ""
+                            agentTools.listDirectory(path)
+                        }
+                        "applyPatch" -> {
+                            val path = argsJson["path"]?.jsonPrimitive?.content ?: ""
+                            val search = argsJson["search_string"]?.jsonPrimitive?.content ?: ""
+                            val replace = argsJson["replace_string"]?.jsonPrimitive?.content ?: ""
+                            agentTools.applyPatch(path, search, replace)
+                        }
+                        "createFile" -> {
+                            val path = argsJson["path"]?.jsonPrimitive?.content ?: ""
+                            val content = argsJson["content"]?.jsonPrimitive?.content ?: ""
+                            agentTools.createFile(path, content)
+                        }
+                        else -> "错误：未知工具名称"
+                    }
+
+                    accumulatedReasoning += "\n> ⚙️ 工具执行返回结果:\n$result"
+                    trySend(AgentEvent.ContentUpdate(accumulatedText, accumulatedReasoning, true, 0))
+                }
+            }
+
+            trySend(AgentEvent.ContentUpdate(accumulatedText, accumulatedReasoning, false, 0))
+            close()
+
+        } catch (e: Throwable) {
+            AppLog.e("Kotlin AI 核心调度崩溃: ${e.stackTraceToString()}")
+            trySend(AgentEvent.Error("核心调度异常: ${e.localizedMessage ?: e.javaClass.simpleName}"))
+            close(e)
+        }
 
         awaitClose { AppLog.d("AiBrain: Flow 已关闭") }
     }

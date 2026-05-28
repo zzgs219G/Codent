@@ -16,13 +16,12 @@ navigation = "2.8.5"
 coroutines = "1.9.0"
 coil = "3.0.0-rc01"
 # 两行合并回一行，用同一个版本
-langchain4j = "1.0.0"
+openai-kotlin = "3.8.2"
 
 [libraries]
-langchain4j-main = { module = "dev.langchain4j:langchain4j", version.ref = "langchain4j" }
-langchain4j-core   = { module = "dev.langchain4j:langchain4j-core",    version.ref = "langchain4j" }
-langchain4j-openai = { module = "dev.langchain4j:langchain4j-open-ai", version.ref = "langchain4j" }
-
+openai-kotlin-client = { module = "com.aallam.openai:openai-client", version.ref = "openai-kotlin" }
+# openai-kotlin 依赖 Ktor 作为引擎，Android 端推荐使用 okhttp 引擎
+ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version = "2.3.12" } 
 compose-markdown = { module = "com.github.jeziellago:compose-markdown", version = "0.5.8" }
 # AndroidX 基础
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version = "1.15.0" }
@@ -69,12 +68,7 @@ compose-ui-core = [
     "androidx-compose-icons-extended"
 ]
 
-# ✨ 船新升级：把臃肿的 Ktor 联网大礼包，换成高内聚的 LangChain4j 大礼包！
-langchain4j = [
-    "langchain4j-main",
-    "langchain4j-core",
-    "langchain4j-openai"
-]
+
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
