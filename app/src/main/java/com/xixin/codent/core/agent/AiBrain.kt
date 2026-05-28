@@ -52,7 +52,10 @@ private fun parseHost(apiBaseUrl: String): String {
         .trimEnd('/')
 }
 
-class AiBrain(private val repository: LocalFileRepository) {
+@Singleton // 🔥 标记为单例
+ class AiBrain @Inject constructor(
+     private val repository: LocalFileRepository // 🔥 通过构造函数注入
+ ) {
 
     private var cachedProjectTree: String? = null
     private var lastRootPath: String? = null

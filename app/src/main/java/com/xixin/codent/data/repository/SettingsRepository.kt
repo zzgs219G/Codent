@@ -58,7 +58,10 @@ val PRESET_PROVIDERS = listOf(
     )
 )
 
-class SettingsRepository(context: Context) {
+@Singleton // 🔥 标记为单例
+class SettingsRepository @Inject constructor(
+    private val context: Context // 🔥 Hilt 会自动注入 Context
+){
 
     private val prefs = context.getSharedPreferences("codent_settings", Context.MODE_PRIVATE)
 

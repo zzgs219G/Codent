@@ -6,6 +6,8 @@ plugins {
     alias(libs.plugins.kotlin.android)         // 这里对应 TOML 里的新别名
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.hilt)
+    alias(libs.plugins.ksp)
 }
 
 // 1. 签名配置（Codent 自动加载项目 release.properties）
@@ -100,7 +102,9 @@ dependencies {
     implementation(libs.androidx.core.splashscreen)
     
     implementation(libs.compose.markdown)
-
+implementation(libs.hilt.android)
+     kapt(libs.hilt.android.compiler)
+     implementation(libs.hilt.navigation.compose)
     // 🔥 切换为纯正的 Kotlin 专属 AI 驱动客户端与 Ktor 网络引擎
     implementation(libs.openai.kotlin.client)
     implementation(libs.ktor.client.okhttp)
@@ -120,4 +124,5 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.robolectric)
+    
 }
