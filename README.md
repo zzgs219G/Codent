@@ -1,12 +1,6 @@
 # Codent
 AI
 
-
-
-
-
-好的，这里给你一版精简、工程化、可直接丢给其他 AI 或当 PRD 用的版本。
----
 Android AI 编程 Agent App 需求说明
 
 一、项目目标
