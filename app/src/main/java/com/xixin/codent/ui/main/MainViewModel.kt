@@ -168,7 +168,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun sendChatMessage(userText: String) {
+        fun sendChatMessage(userText: String) {
         val cleanedText = userText.trim()
         if (cleanedText.isBlank()) return
 
@@ -178,10 +178,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        val rootPath = snapshot.directoryStack.firstOrNull() ?: run {
+        // 🔥 修复点：把 firstOrNull() 改成 lastOrNull()
+        // 这样你在“资源”里点进哪个文件夹，AI 的大脑就只扫描哪个文件夹！
+        val rootPath = snapshot.directoryStack.lastOrNull() ?: run {
             appendMessage(ChatMessage("assistant", "❌ 请先选择项目根目录"))
             return
         }
+
+        
+
 
         agentJob?.cancel()
         appendMessage(ChatMessage("user", cleanedText))
