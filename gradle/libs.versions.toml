@@ -16,9 +16,10 @@ navigation = "2.8.5"
 coroutines = "1.9.0"
 coil = "3.0.0-rc01"
 # 两行合并回一行，用同一个版本
-langchain4j = "1.0.0-beta1"
+langchain4j = "1.0.0"
 
 [libraries]
+langchain4j-main = { module = "dev.langchain4j:langchain4j", version.ref = "langchain4j" }
 langchain4j-core   = { module = "dev.langchain4j:langchain4j-core",    version.ref = "langchain4j" }
 langchain4j-openai = { module = "dev.langchain4j:langchain4j-open-ai", version.ref = "langchain4j" }
 
@@ -70,6 +71,7 @@ compose-ui-core = [
 
 # ✨ 船新升级：把臃肿的 Ktor 联网大礼包，换成高内聚的 LangChain4j 大礼包！
 langchain4j = [
+    "langchain4j-main",
     "langchain4j-core",
     "langchain4j-openai"
 ]

@@ -8,7 +8,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xixin.codent.core.agent.AgentEvent
 import com.xixin.codent.core.agent.AiBrain
-import com.xixin.codent.data.api.ApiMessage
 import com.xixin.codent.data.model.ChatMessage
 import com.xixin.codent.data.model.FileNode
 import com.xixin.codent.data.model.PatchItem
@@ -26,14 +25,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
-
     private val repository = SafRepository(application)
     private val _uiState = MutableStateFlow(WorkspaceState())
     val uiState: StateFlow<WorkspaceState> = _uiState.asStateFlow()
 
-    // ✨ 现代化升级：Ktor 和 HttpClient 已经被安全拆除，现在只剩这一行清爽的 AI 大脑初始化！
     private val aiBrain = AiBrain(repository)
-
     private var directoryLoadJob: Job? = null
     private var agentJob: Job? = null
 
@@ -115,10 +111,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         sendChatMessage(newText)
     }
 
-    // ==========================================
-    // 确认、拒绝与撤回的持久化逻辑
-    // ==========================================
-
     fun confirmPatch(messageIndex: Int, patchIndex: Int, patch: PatchProposal) {
         viewModelScope.launch {
             val success = repository.overwriteFile(patch.targetFileUri, patch.proposedContent)
@@ -146,7 +138,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun rejectPatch(messageIndex: Int, patchIndex: Int, patch: PatchProposal) {
         AppLog.d("🚫 [文件落盘]: 用户拒绝了修改提议: ${patch.targetFileName}")
-        _uiState.update { state -> 
+        _uiState.update { state ->
             val msgs = state.chatMessages.toMutableList()
             if (messageIndex in msgs.indices) {
                 val targetMsg = msgs[messageIndex]
@@ -168,32 +160,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ==========================================
-    // AI 调度
-    // ==========================================
-
     fun sendChatMessage(userText: String) {
         val cleanedText = userText.trim()
         if (cleanedText.isBlank()) return
-
         val snapshot = _uiState.value
         if (snapshot.apiKey.isBlank()) { appendMessage(ChatMessage("assistant", "❌ 请先配置 API Key")); return }
-        
         val rootUri = snapshot.directoryStack.firstOrNull()
         if (rootUri == null) { appendMessage(ChatMessage("assistant", "❌ 请先选择项目根目录")); return }
 
         agentJob?.cancel()
-
         appendMessage(ChatMessage("user", cleanedText))
         appendMessage(ChatMessage("assistant", "", isLoading = true))
 
         agentJob = viewModelScope.launch {
             _uiState.update { it.copy(isAgentWorking = true) }
             
-            val history = snapshot.chatMessages.filterNot { it.isLoading }.takeLast(30).mapNotNull {
-                if (it.content.isNotBlank()) ApiMessage(role = it.role, content = it.content) else null
-            }
-
+            // 🔥 核心修正：直接过滤拿到纯净的 ChatMessage 列表，抛弃已经被干掉的 ApiMessage 转换桥梁
+            val history = snapshot.chatMessages
+    .filterNot { it.isLoading }
+    .filter { it.content.isNotBlank() }
+    .takeLast(30)
             try {
                 aiBrain.startConversation(
                     rootUri = rootUri,
@@ -282,6 +268,5 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
         directoryLoadJob?.cancel()
         agentJob?.cancel()
-        // 🗑️ 旧的 httpClient.close() 已经伴随着老代码一块干净地消失了！
     }
 }

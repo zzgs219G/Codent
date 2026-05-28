@@ -1,14 +1,8 @@
 // 文件路径: app/src/main/java/com/xixin/codent/core/agent/AiBrain.kt
-//
-// 重构内容：
-//   - 删除手写 while 循环状态机（原 130 行）
-//   - 删除对 AiApiService / AiToolbox 的所有依赖
-//   - LangChain4j AiServices 接管 Tool Use Loop、消息历史、流式输出
-//   - MainViewModel.sendChatMessage() 调用侧签名不变，零改动
-
 package com.xixin.codent.core.agent
 
 import android.net.Uri
+import com.xixin.codent.data.model.ChatMessage as AppChatMessage
 import com.xixin.codent.data.repository.SafRepository
 import com.xixin.codent.wrapper.log.AppLog
 import dev.langchain4j.data.message.AiMessage
@@ -16,36 +10,29 @@ import dev.langchain4j.data.message.ChatMessage
 import dev.langchain4j.data.message.SystemMessage
 import dev.langchain4j.data.message.UserMessage
 import dev.langchain4j.memory.chat.MessageWindowChatMemory
+import dev.langchain4j.model.chat.response.ChatResponse          // ← 1.0.0 新包路径
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel
-import dev.langchain4j.model.output.Response
 import dev.langchain4j.service.AiServices
 import dev.langchain4j.service.TokenStream
+import dev.langchain4j.service.tool.ToolExecution                  // ← onToolExecuted 参数类型
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 
-// ─────────────────────────────────────────────────────────────
-// Agent 接口：LangChain4j 会在运行时自动生成实现类
-// ─────────────────────────────────────────────────────────────
 private interface CodentAgentService {
     fun chat(message: String): TokenStream
 }
 
-// ─────────────────────────────────────────────────────────────
-// AiBrain：对外接口与原来完全一致，MainViewModel 零改动
-// ─────────────────────────────────────────────────────────────
 class AiBrain(private val repository: SafRepository) {
 
-    // 项目树缓存（逻辑不变，只是移到 Brain 内部）
     private var cachedProjectTree: String? = null
     private var lastRootUriString: String? = null
     private var lastCacheTimeMs: Long = 0L
 
-    // AgentTools 实例在 Brain 生命周期内复用，rootUri/onPatchReady 每轮对话前更新
     private val agentTools = AgentTools(
         repository   = repository,
-        rootUri      = Uri.EMPTY,       // 占位，startConversation 开头会更新
-        onPatchReady = {}               // 占位，同上
+        rootUri      = Uri.EMPTY,
+        onPatchReady = {}
     )
 
     fun startConversation(
@@ -53,12 +40,11 @@ class AiBrain(private val repository: SafRepository) {
         apiBaseUrl: String,
         apiKey: String,
         model: String,
-        enableThinking: Boolean,        // 保留参数，兼容 ViewModel 调用侧；OpenAI 兼容接口通过 model 名控制
-        history: List<com.xixin.codent.data.api.ApiMessage>,
+        enableThinking: Boolean,
+        history: List<AppChatMessage>,
         userText: String
     ): Flow<AgentEvent> = callbackFlow {
 
-        // ── 1. 安全拦截（原逻辑不变）──────────────────────────────
         val dangerKeywords = listOf("销毁项目", "删除所有", "rm -rf", "清空项目")
         if (dangerKeywords.any { userText.contains(it, ignoreCase = true) }) {
             trySend(AgentEvent.Error(DANGER_ZONE))
@@ -66,7 +52,6 @@ class AiBrain(private val repository: SafRepository) {
             return@callbackFlow
         }
 
-        // ── 2. 项目树缓存（原逻辑不变）───────────────────────────
         val now       = System.currentTimeMillis()
         val uriString = rootUri.toString()
         val projectTree = if (
@@ -85,13 +70,9 @@ class AiBrain(private val repository: SafRepository) {
             }
         }
 
-        // ── 3. 更新工具实例的运行时上下文 ────────────────────────
-        agentTools.rootUri    = rootUri
-        agentTools.onPatchReady = { proposal ->
-            trySend(AgentEvent.PatchProposed(proposal))
-        }
+        agentTools.rootUri      = rootUri
+        agentTools.onPatchReady = { proposal -> trySend(AgentEvent.PatchProposed(proposal)) }
 
-        // ── 4. 构建 System Prompt（8 大红线原文保留）────────────
         val systemPrompt = """
             你是一个顶级 Android 架构师 Agent。
             【项目全局透视图 (含文件大小)】：
@@ -107,17 +88,14 @@ class AiBrain(private val repository: SafRepository) {
             8. 仅使用纯文本回复，禁止扮演用户。
         """.trimIndent()
 
-        // ── 5. 把 ViewModel 传来的历史转成 LangChain4j 消息格式 ─
         val lcHistory: List<ChatMessage> = history.mapNotNull { msg ->
             when (msg.role) {
-                "user"      -> UserMessage.from(msg.content ?: return@mapNotNull null)
-                "assistant" -> AiMessage.from(msg.content ?: return@mapNotNull null)
-                else        -> null   // tool 消息由框架自己管理，不需要手动传入
+                "user"      -> UserMessage.from(msg.content)
+                "assistant" -> AiMessage.from(msg.content)
+                else        -> null
             }
         }
 
-        // ── 6. 构建 LangChain4j 流式模型（OpenAI 兼容格式）──────
-        //    baseUrl 去掉末尾的 /chat/completions，LangChain4j 自己拼
         val cleanBaseUrl = apiBaseUrl
             .removeSuffix("/chat/completions")
             .trimEnd('/')
@@ -128,71 +106,58 @@ class AiBrain(private val repository: SafRepository) {
             .modelName(model)
             .build()
 
-        // ── 7. 组装 Memory：系统提示 + 历史 ─────────────────────
-        //    MessageWindowChatMemory 窗口设 60，足够长对话；超出自动裁剪
         val memory = MessageWindowChatMemory.withMaxMessages(60)
         memory.add(SystemMessage.from(systemPrompt))
         lcHistory.forEach { memory.add(it) }
 
-        // ── 8. 用 AiServices 构建 Agent，注入工具 ────────────────
-        //    框架自动：生成 Tool Schema → 管理 Tool Use Loop → 注入工具结果
         val agentService = AiServices.builder(CodentAgentService::class.java)
-            .streamingChatLanguageModel(streamingModel)
-            .tools(agentTools)              // @Tool 方法自动扫描注册
+            .streamingChatModel(streamingModel)   // ← 1.0.0 新方法名
+            .tools(agentTools)
             .chatMemory(memory)
             .build()
 
-        // ── 9. 发起流式对话，把事件转发到 Flow ───────────────────
-        var accumulatedText      = ""
-        var accumulatedReasoning = ""
-        var totalPromptTokens    = 0
+        var accumulatedText       = ""
+        var accumulatedReasoning  = ""
+        var totalPromptTokens     = 0
         var totalCompletionTokens = 0
 
         AppLog.d("AiBrain: 开始对话 | model=$model | user=${userText.take(60)}")
 
         agentService.chat(userText)
-            .onNext { token ->
+            .onPartialResponse { token ->              // ← 替换废弃的 onNext
                 accumulatedText += token
-                trySend(
-                    AgentEvent.ContentUpdate(
-                        text        = accumulatedText,
-                        reasoning   = accumulatedReasoning,
-                        isLoading   = true,
-                        uploadChars = 0
-                    )
-                )
+                trySend(AgentEvent.ContentUpdate(
+                    text        = accumulatedText,
+                    reasoning   = accumulatedReasoning,
+                    isLoading   = true,
+                    uploadChars = 0
+                ))
             }
-            .onToolExecuted { toolExecution ->
-                // 工具被调用时，把函数名追加到 reasoning 区域显示（与原来效果一致）
+            .onToolExecuted { toolExecution: ToolExecution ->   // ← 显式类型，消灭歧义
                 val tip = "> 🤖 正在调度工具: ${toolExecution.request().name()} ..."
                 accumulatedReasoning += if (accumulatedReasoning.isNotEmpty()) "\n\n$tip" else tip
                 AppLog.d("🔧 [Tool 执行完毕]: ${toolExecution.request().name()}")
-                trySend(
-                    AgentEvent.ContentUpdate(
-                        text        = accumulatedText,
-                        reasoning   = accumulatedReasoning,
-                        isLoading   = true,
-                        uploadChars = 0
-                    )
-                )
+                trySend(AgentEvent.ContentUpdate(
+                    text        = accumulatedText,
+                    reasoning   = accumulatedReasoning,
+                    isLoading   = true,
+                    uploadChars = 0
+                ))
             }
-            .onComplete { response: Response<AiMessage> ->
-                // 累计 token 用量
+            .onCompleteResponse { response: ChatResponse ->      // ← 新类型 ChatResponse
                 response.tokenUsage()?.let { usage ->
                     totalPromptTokens     += usage.inputTokenCount()  ?: 0
                     totalCompletionTokens += usage.outputTokenCount() ?: 0
                     AppLog.d("✅ 对话完成 | prompt=$totalPromptTokens | completion=$totalCompletionTokens")
                     trySend(AgentEvent.UsageUpdate(totalPromptTokens, totalCompletionTokens))
                 }
-                trySend(
-                    AgentEvent.ContentUpdate(
-                        text        = accumulatedText,
-                        reasoning   = accumulatedReasoning,
-                        isLoading   = false,
-                        uploadChars = 0
-                    )
-                )
-                close()   // 正常结束，关闭 Flow
+                trySend(AgentEvent.ContentUpdate(
+                    text        = accumulatedText,
+                    reasoning   = accumulatedReasoning,
+                    isLoading   = false,
+                    uploadChars = 0
+                ))
+                close()
             }
             .onError { error ->
                 AppLog.e("❌ AiBrain 流错误: ${error.message}")
@@ -201,7 +166,6 @@ class AiBrain(private val repository: SafRepository) {
             }
             .start()
 
-        // Flow 取消时无需额外清理（LangChain4j 流本身会被 GC）
         awaitClose { AppLog.d("AiBrain: Flow 已关闭") }
     }
 }

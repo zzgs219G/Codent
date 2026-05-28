@@ -101,11 +101,14 @@ dependencies {
     implementation(libs.compose.markdown)
 
     // LangChain4j，强制统一 okhttp 版本防止 Android 运行时冲突
-    implementation(libs.bundles.langchain4j) {
-        exclude(group = "com.squareup.okhttp3", module = "okhttp")
-    }
-    implementation("com.squareup.okhttp3:okhttp:4.12.0") // 显式锁定版本
-
+    implementation(libs.langchain4j.core)
+implementation(libs.langchain4j.main) {
+    exclude(group = "com.squareup.okhttp3", module = "okhttp")
+}
+implementation(libs.langchain4j.openai) {
+    exclude(group = "com.squareup.okhttp3", module = "okhttp")
+}
+implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.documentfile:documentfile:1.0.1")
     implementation(libs.okio)
     implementation(libs.javaDiffUtils)
