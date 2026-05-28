@@ -8,8 +8,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xixin.codent.core.agent.AgentEvent
 import com.xixin.codent.core.agent.AiBrain
-import com.xixin.codent.data.api.AiApiService
-import com.xixin.codent.data.api.ApiMessage
 import com.xixin.codent.data.model.ChatMessage
 import com.xixin.codent.data.model.FileNode
 import com.xixin.codent.data.model.PatchItem
@@ -18,14 +16,6 @@ import com.xixin.codent.data.model.PatchState
 import com.xixin.codent.data.model.WorkspaceState
 import com.xixin.codent.data.repository.SafRepository
 import com.xixin.codent.wrapper.log.AppLog
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.plugins.logging.LogLevel
-import io.ktor.client.plugins.logging.Logger
-import io.ktor.client.plugins.logging.Logging
-import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,33 +23,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
-
     private val repository = SafRepository(application)
     private val _uiState = MutableStateFlow(WorkspaceState())
     val uiState: StateFlow<WorkspaceState> = _uiState.asStateFlow()
 
-    private val httpClient = HttpClient(CIO) {
-        install(ContentNegotiation) {
-            json(Json { ignoreUnknownKeys = true; isLenient = true; encodeDefaults = true })
-        }
-        install(HttpTimeout) {
-            requestTimeoutMillis = 300_000L
-            connectTimeoutMillis = 90_000L
-            socketTimeoutMillis = 300_000L
-        }
-        install(Logging) {
-            logger = object : Logger { override fun log(message: String) { AppLog.d("[Network] $message") } }
-            level = LogLevel.INFO
-        }
-    }
-
-    private val aiService = AiApiService(httpClient)
-    private val aiBrain = AiBrain(aiService, repository)
-
+    private val aiBrain = AiBrain(repository)
     private var directoryLoadJob: Job? = null
     private var agentJob: Job? = null
 
@@ -141,10 +111,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         sendChatMessage(newText)
     }
 
-    // ==========================================
-    // 🔥 核心重写：确认、拒绝与撤回的持久化逻辑
-    // ==========================================
-
     fun confirmPatch(messageIndex: Int, patchIndex: Int, patch: PatchProposal) {
         viewModelScope.launch {
             val success = repository.overwriteFile(patch.targetFileUri, patch.proposedContent)
@@ -152,7 +118,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 AppLog.d("💾 [文件落盘]: ✅ 用户确认修改成功: ${patch.targetFileName}")
                 _uiState.update { state ->
                     val msgs = state.chatMessages.toMutableList()
-                    // 精准制导：把对应的卡片状态改为已应用
                     if (messageIndex in msgs.indices) {
                         val targetMsg = msgs[messageIndex]
                         val updatedPatches = targetMsg.patches.toMutableList()
@@ -162,8 +127,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                     val updatedContent = if (state.selectedFile?.uri == patch.targetFileUri) patch.proposedContent else state.currentCodeContent
-                    
-                    // 注意：这里不再新增一句废话聊天了！UI 自己会折叠变色
                     state.copy(chatMessages = msgs, currentCodeContent = updatedContent)
                 }
                 persistChatHistoryAsync()
@@ -175,9 +138,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun rejectPatch(messageIndex: Int, patchIndex: Int, patch: PatchProposal) {
         AppLog.d("🚫 [文件落盘]: 用户拒绝了修改提议: ${patch.targetFileName}")
-        _uiState.update { state -> 
+        _uiState.update { state ->
             val msgs = state.chatMessages.toMutableList()
-            // 精准制导：把对应的卡片状态改为已拒绝
             if (messageIndex in msgs.indices) {
                 val targetMsg = msgs[messageIndex]
                 val updatedPatches = targetMsg.patches.toMutableList()
@@ -192,39 +154,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun undoPatch(messageIndex: Int, patchIndex: Int, patch: PatchProposal) {
-        // 🔥 预留撤回接口：后续你可以在这里实现把旧代码覆写回去的逻辑
         AppLog.i("⏪ [撤回功能开发中] 用户请求撤回对 ${patch.targetFileName} 的修改")
         viewModelScope.launch(Dispatchers.Main) {
             Toast.makeText(getApplication(), "撤回功能研发中...", Toast.LENGTH_SHORT).show()
         }
     }
 
-    // ==========================================
-    // AI 调度
-    // ==========================================
-
     fun sendChatMessage(userText: String) {
         val cleanedText = userText.trim()
         if (cleanedText.isBlank()) return
-
         val snapshot = _uiState.value
         if (snapshot.apiKey.isBlank()) { appendMessage(ChatMessage("assistant", "❌ 请先配置 API Key")); return }
-        
         val rootUri = snapshot.directoryStack.firstOrNull()
         if (rootUri == null) { appendMessage(ChatMessage("assistant", "❌ 请先选择项目根目录")); return }
 
         agentJob?.cancel()
-
         appendMessage(ChatMessage("user", cleanedText))
         appendMessage(ChatMessage("assistant", "", isLoading = true))
 
         agentJob = viewModelScope.launch {
             _uiState.update { it.copy(isAgentWorking = true) }
             
-            val history = snapshot.chatMessages.filterNot { it.isLoading }.takeLast(30).mapNotNull {
-                if (it.content.isNotBlank()) ApiMessage(role = it.role, content = it.content) else null
-            }
-
+            // 🔥 核心修正：直接过滤拿到纯净的 ChatMessage 列表，抛弃已经被干掉的 ApiMessage 转换桥梁
+            val history = snapshot.chatMessages
+    .filterNot { it.isLoading }
+    .filter { it.content.isNotBlank() }
+    .takeLast(30)
             try {
                 aiBrain.startConversation(
                     rootUri = rootUri,
@@ -243,7 +198,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             updateLastMessageUsage(event.promptTokens, event.completionTokens)
                         }
                         is AgentEvent.PatchProposed -> {
-                            // 🔥 核心升级：不再写进全局变量，直接追加到当前最后一条聊天记录身上！
                             _uiState.update { state ->
                                 val msgs = state.chatMessages.toMutableList()
                                 if (msgs.isEmpty()) return@update state
@@ -275,7 +229,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { state ->
             val messages = state.chatMessages.toMutableList()
             if (messages.isEmpty()) return@update state
-            // 注意这里要保留 patches 不被覆盖掉
             messages[messages.lastIndex] = messages.last().copy(
                 content = text, reasoningContent = reasoning, isLoading = isLoading, uploadChars = uploadChars
             )
@@ -315,6 +268,5 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
         directoryLoadJob?.cancel()
         agentJob?.cancel()
-        httpClient.close()
     }
 }
