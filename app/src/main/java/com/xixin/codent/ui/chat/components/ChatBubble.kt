@@ -1,4 +1,3 @@
-// [文件路径: app/src/main/java/com/xixin/codent/ui/chat/components/ChatBubble.kt]
 package com.xixin.codent.ui.chat.components
 
 import android.widget.Toast
@@ -68,7 +67,6 @@ fun ChatBubble(
 
                 if (msg.content.isNotEmpty()) {
                     if (isUser) {
-                        // 用户消息保持纯文本，不渲染 Markdown
                         SelectionContainer {
                             Text(
                                 text = msg.content,
@@ -77,9 +75,10 @@ fun ChatBubble(
                             )
                         }
                     } else {
-                        // AI 回复：MarkdownText 自动处理标题/加粗/斜体/列表/代码块
+                        // AI 回复：MarkdownText 修复
                         MarkdownText(
                             markdown = msg.content,
+                            isTextSelectable = true, // 🔥 核心修复：开启底层原生 TextView 的长按局部选择功能（支持表格、代码块等大部分区域的选择）
                             style = TextStyle(
                                 color = textColor,
                                 fontSize = MaterialTheme.typography.bodyLarge.fontSize,
@@ -130,17 +129,18 @@ fun ChatBubble(
                     }
 
                     if (!isUser && !msg.isLoading && msg.content.isNotEmpty()) {
+                        // 🔥 核心修复：移除了原本严重压缩点击热区的 Modifier.size(24.dp)
+                        // 恢复系统默认的 48dp 黄金触摸面积，一戳即中，完美执行全篇复制！
                         IconButton(
                             onClick = {
                                 clipboardManager.setText(AnnotatedString(msg.content))
-                                Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.size(24.dp)
+                                Toast.makeText(context, "已复制完整 AI 消息", Toast.LENGTH_SHORT).show()
+                            }
                         ) {
                             Icon(
                                 Icons.Default.ContentCopy, "复制",
-                                tint = textColor.copy(alpha = 0.5f),
-                                modifier = Modifier.size(16.dp)
+                                tint = textColor.copy(alpha = 0.6f),
+                                modifier = Modifier.size(20.dp) // 图标本身保持精致
                             )
                         }
                     }

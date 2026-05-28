@@ -14,9 +14,8 @@ import java.io.File
 import java.nio.file.Path
 import java.nio.file.Paths
 import kotlin.io.path.*
-
-class LocalFileRepository {
-
+@Singleton // 🔥 标记为单例
+ class LocalFileRepository @Inject constructor() { 
     private val ignoredDirectories = setOf("build", ".git", ".gradle", ".idea", "node_modules", "captures")
     private val allowedCodeExtensions = setOf("kt", "java", "xml", "kts", "gradle", "json", "properties", "md", "txt")
 

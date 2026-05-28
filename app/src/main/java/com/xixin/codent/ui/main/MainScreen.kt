@@ -19,7 +19,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.xixin.codent.presentation.common.MainUiEvent
 import com.xixin.codent.ui.chat.ChatPanel
 import com.xixin.codent.ui.chat.ChatAction
 import com.xixin.codent.ui.editor.EditorPanel
@@ -35,23 +36,43 @@ enum class WorkspaceTab(val title: String, val icon: ImageVector) {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun MainScreen(viewModel: MainViewModel = viewModel()) {
+fun MainScreen(viewModel: MainViewModel = hiltViewModel()) { // 🔥 使用 hiltViewModel()
     val uiState by viewModel.uiState.collectAsState()
     var currentTab by remember { mutableStateOf(WorkspaceTab.EXPLORER) }
     val context = LocalContext.current
 
-    // 🔥 全新的超级权限请求发射器
+    // 🔥 收集副作用
+    LaunchedEffect(Unit) {
+        viewModel.uiEffect.collect { effect ->
+            when (effect) {
+                is MainUiEffect.ShowToast -> {
+                    Toast.makeText(context, effect.message, Toast.LENGTH_SHORT).show()
+                }
+                MainUiEffect.NavigateToPreview -> {
+                    currentTab = WorkspaceTab.PREVIEW
+                }
+            }
+        }
+    }
+
+    // 🔥 错误提示
+    if (uiState.errorMessage != null) {
+        LaunchedEffect(uiState.errorMessage) {
+            Toast.makeText(context, uiState.errorMessage, Toast.LENGTH_LONG).show()
+            viewModel.onEvent(MainUiEvent.ClearError)
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
         if (Environment.isExternalStorageManager()) {
-            // 授权成功！直接写死加载 Android 默认存储根目录
-            viewModel.initWorkspace("/storage/emulated/0/")
+            viewModel.onEvent(MainUiEvent.InitWorkspace("/storage/emulated/0/"))
         }
     }
 
     BackHandler(enabled = uiState.directoryStack.isNotEmpty() && currentTab == WorkspaceTab.EXPLORER) {
-        viewModel.navigateBack()
+        viewModel.onEvent(MainUiEvent.NavigateBack)
     }
 
     Scaffold(
@@ -73,30 +94,29 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
             targetState = currentTab,
             label = "Tab Transition",
             transitionSpec = {
-                slideInHorizontally { width -> width / 2 } + fadeIn() togetherWith 
-                slideOutHorizontally { width -> -width / 2 } + fadeOut()
+                slideInHorizontally { width -> width / 2 } + fadeIn() togetherWith
+                        slideOutHorizontally { width -> -width / 2 } + fadeOut()
             },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .consumeWindowInsets(innerPadding) 
+                .consumeWindowInsets(innerPadding)
         ) { tab ->
             when (tab) {
                 WorkspaceTab.EXPLORER -> ExplorerPanel(
                     uiState = uiState,
-                    onInitWorkspace = { 
-                        // 🔥 修复点：用全新的权限判断逻辑，替换掉报错的 folderPickerLauncher
+                    onInitWorkspace = {
                         if (Environment.isExternalStorageManager()) {
-                            viewModel.initWorkspace("/storage/emulated/0/") 
+                            viewModel.onEvent(MainUiEvent.InitWorkspace("/storage/emulated/0/"))
                         } else {
                             val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
                             intent.data = Uri.parse("package:${context.packageName}")
                             permissionLauncher.launch(intent)
                         }
                     },
-                    onNavigateBack = { viewModel.navigateBack() },
-                    onFolderClick = { path -> viewModel.navigateIntoFolder(path) },
-                    onFileClick = { fileNode -> viewModel.openFile(fileNode) { currentTab = WorkspaceTab.PREVIEW } }
+                    onNavigateBack = { viewModel.onEvent(MainUiEvent.NavigateBack) },
+                    onFolderClick = { path -> viewModel.onEvent(MainUiEvent.NavigateIntoFolder(path)) },
+                    onFileClick = { fileNode -> viewModel.onEvent(MainUiEvent.OpenFile(fileNode)) }
                 )
                 WorkspaceTab.PREVIEW -> EditorPanel(
                     fileName = uiState.selectedFile?.name ?: "未选中文件",
@@ -105,15 +125,15 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 WorkspaceTab.AGENT -> ChatPanel(
                     messages = uiState.chatMessages,
                     isAgentWorking = uiState.isAgentWorking,
-                    pendingPatches = uiState.pendingPatches, 
+                    pendingPatches = emptyList(), // 🔥 这个参数已经没用了，可以删除
                     onAction = { action ->
                         when (action) {
-                            is ChatAction.SendMessage -> viewModel.sendChatMessage(action.text)
-                            is ChatAction.ConfirmPatch -> viewModel.confirmPatch(action.messageIndex, action.patchIndex, action.patch)
-                            is ChatAction.RejectPatch -> viewModel.rejectPatch(action.messageIndex, action.patchIndex, action.patch)
-                            is ChatAction.UndoPatch -> viewModel.undoPatch(action.messageIndex, action.patchIndex, action.patch)
-                            is ChatAction.DeleteMessage -> viewModel.deleteMessage(action.index)
-                            is ChatAction.EditMessage -> viewModel.editAndResendMessage(action.index, action.text)
+                            is ChatAction.SendMessage -> viewModel.onEvent(MainUiEvent.SendMessage(action.text))
+                            is ChatAction.ConfirmPatch -> viewModel.onEvent(MainUiEvent.ConfirmPatch(action.messageIndex, action.patchIndex, action.patch))
+                            is ChatAction.RejectPatch -> viewModel.onEvent(MainUiEvent.RejectPatch(action.messageIndex, action.patchIndex, action.patch))
+                            is ChatAction.UndoPatch -> viewModel.onEvent(MainUiEvent.UndoPatch(action.messageIndex, action.patchIndex, action.patch))
+                            is ChatAction.DeleteMessage -> viewModel.onEvent(MainUiEvent.DeleteMessage(action.index))
+                            is ChatAction.EditMessage -> viewModel.onEvent(MainUiEvent.EditAndResendMessage(action.index, action.text))
                         }
                     }
                 )
@@ -122,8 +142,9 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                     apiKey = uiState.apiKey,
                     currentModel = uiState.selectedModel,
                     enableThinking = uiState.enableThinking,
-                    onSaveConfig = { baseUrl, key, model -> viewModel.saveConfig(baseUrl, key, model) },
-                    onSaveThinking = { enabled -> viewModel.saveThinkingEnabled(enabled) }
+                    onSaveConfig = { baseUrl, key, model -> viewModel.onEvent(MainUiEvent.SaveConfig(baseUrl, key, model)) },
+                    onSaveThinking = { enabled -> viewModel.onEvent(MainUiEvent.SaveThinkingEnabled(enabled)) },
+                    onApplyProvider = { provider -> viewModel.onEvent(MainUiEvent.ApplyProvider(provider)) }
                 )
             }
         }

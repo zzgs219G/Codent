@@ -12,8 +12,10 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
 
-class ChatHistoryRepository(context: Context) {
-
+@Singleton // 🔥 标记为单例
+ class ChatHistoryRepository @Inject constructor(
+     private val context: Context // 🔥 Hilt 会自动注入 Context
+ ) {
     private val chatHistoryFile = File(context.filesDir, "chat_history.json")
 
     private val json = Json {
