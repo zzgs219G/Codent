@@ -104,14 +104,12 @@ dependencies {
 
     // LangChain4j，强制统一 okhttp 版本防止 Android 运行时冲突
     implementation(libs.langchain4j.core)
-    implementation(libs.langchain4j.main) {
-        exclude(group = "com.squareup.okhttp3", module = "okhttp")
-    }
-    implementation(libs.langchain4j.openai) {
-        // 这一行必须写，否则 LangChain4j 会把它内部自带的旧版 okhttp 拽进来
-        exclude(group = "com.squareup.okhttp3", module = "okhttp")
-        exclude(group = "dev.langchain4j", module = "langchain4j-http-client-jdk")
-    }
+implementation(libs.langchain4j.main) {
+    exclude(group = "com.squareup.okhttp3", module = "okhttp")
+}
+implementation(libs.langchain4j.openai) {
+    exclude(group = "com.squareup.okhttp3", module = "okhttp")
+}
     
     // 你手动指定一个高版本，强制统一
     
