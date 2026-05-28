@@ -93,31 +93,29 @@ android {
 }
 
 dependencies {
-
-implementation("androidx.documentfile:documentfile:1.0.1")
-    // UI 层 (Compose 核心 Bundle)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.bundles.compose.ui.core)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)
+    
+    implementation(libs.compose.markdown)
 
-    // Agent 核心：网络（Ktor）与 序列化
-    implementation(libs.bundles.ktor.full)
-    implementation(libs.kotlinx.serialization.json)
+    // LangChain4j，强制统一 okhttp 版本防止 Android 运行时冲突
+    implementation(libs.bundles.langchain4j) {
+        exclude(group = "com.squareup.okhttp3", module = "okhttp")
+    }
+    implementation("com.squareup.okhttp3:okhttp:4.12.0") // 显式锁定版本
 
-    // Agent 核心：文件操作与 Diff 算法
+    implementation("androidx.documentfile:documentfile:1.0.1")
     implementation(libs.okio)
-    implementation(libs.java.diff.utils)
-
-    // 图片加载与异步
+    implementation(libs.javaDiffUtils)
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.coil.compose)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.slf4j.nop)
 
-    // 调试预览
     debugImplementation(libs.androidx.compose.ui.tooling)
     implementation(libs.androidx.compose.ui.tooling.preview)
-
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.robolectric)
