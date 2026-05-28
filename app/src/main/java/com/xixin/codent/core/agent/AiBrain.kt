@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
+import javax.inject.Inject
+import javax.inject.Singleton
 
 // ── 错误分类器，让报错信息对用户更友好 ─────────────────────────
 private fun classifyApiError(message: String?): String {

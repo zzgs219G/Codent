@@ -66,20 +66,29 @@ fun ChatPanel(
                 .fillMaxSize()
                 .imePadding() 
         ) {
-            Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("对话记录与调度", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-                    TextButton(
+                    Text(
+                        text = "Agent",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    IconButton(
                         onClick = { onAction(ChatAction.DeleteMessage(-1)) }, 
                         enabled = !isAgentWorking
                     ) {
-                        Icon(Icons.Default.DeleteSweep, contentDescription = "清空记忆", modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("清空记忆")
+                        Icon(
+                            imageVector = Icons.Default.DeleteSweep,
+                            contentDescription = "Clear history",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -89,9 +98,9 @@ fun ChatPanel(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                contentPadding = PaddingValues(vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(horizontal = 8.dp), // Minimalist: let bubbles breathe but not too constrained
+                contentPadding = PaddingValues(vertical = 24.dp), // More breathing room
+                verticalArrangement = Arrangement.spacedBy(24.dp) // More space between messages
             ) {
                 // 🔥 核心升级：补丁已经融合进 ChatBubble 里了，这里只需要循环气泡！
                 itemsIndexed(messages) { index, msg ->

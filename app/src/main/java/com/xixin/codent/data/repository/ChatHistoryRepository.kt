@@ -11,10 +11,14 @@ import com.xixin.codent.wrapper.log.AppLog
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
+import javax.inject.Inject
+import javax.inject.Singleton
+
+import dagger.hilt.android.qualifiers.ApplicationContext
 
 @Singleton // 🔥 标记为单例
  class ChatHistoryRepository @Inject constructor(
-     private val context: Context // 🔥 Hilt 会自动注入 Context
+     @ApplicationContext private val context: Context // 🔥 Hilt 会自动注入 Context
  ) {
     private val chatHistoryFile = File(context.filesDir, "chat_history.json")
 

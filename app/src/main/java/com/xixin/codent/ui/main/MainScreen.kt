@@ -19,10 +19,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.xixin.codent.presentation.common.MainUiEvent
 import com.xixin.codent.ui.chat.ChatPanel
 import com.xixin.codent.ui.chat.ChatAction
+import com.xixin.codent.presentation.main.MainViewModel
+import com.xixin.codent.presentation.common.MainUiEffect
+import android.widget.Toast
 import com.xixin.codent.ui.editor.EditorPanel
 import com.xixin.codent.ui.explorer.ExplorerPanel
 import com.xixin.codent.ui.settings.SettingsPanel
@@ -78,13 +82,36 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) { // 🔥 使用 hilt
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                modifier = Modifier.height(72.dp),
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                tonalElevation = 0.dp // Minimalist: Flat bottom bar
+            ) {
                 WorkspaceTab.entries.forEach { tab ->
+                    val selected = currentTab == tab
                     NavigationBarItem(
-                        selected = currentTab == tab,
+                        selected = selected,
                         onClick = { currentTab = tab },
-                        icon = { Icon(tab.icon, contentDescription = tab.title) },
-                        label = { Text(tab.title) }
+                        icon = {
+                            Icon(
+                                imageVector = tab.icon,
+                                contentDescription = tab.title,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        },
+                        label = {
+                            if (selected) {
+                                Text(tab.title, style = MaterialTheme.typography.labelSmall)
+                            }
+                        },
+                        alwaysShowLabel = false, // Minimalist: Only show label when selected
+                        colors = NavigationBarItemDefaults.colors(
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        )
                     )
                 }
             }
@@ -94,8 +121,7 @@ fun MainScreen(viewModel: MainViewModel = hiltViewModel()) { // 🔥 使用 hilt
             targetState = currentTab,
             label = "Tab Transition",
             transitionSpec = {
-                slideInHorizontally { width -> width / 2 } + fadeIn() togetherWith
-                        slideOutHorizontally { width -> -width / 2 } + fadeOut()
+                fadeIn(initialAlpha = 0.8f) togetherWith fadeOut(targetAlpha = 0.8f) // Minimalist: softer, faster fade
             },
             modifier = Modifier
                 .fillMaxSize()

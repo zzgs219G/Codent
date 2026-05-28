@@ -103,7 +103,7 @@ dependencies {
     
     implementation(libs.compose.markdown)
 implementation(libs.hilt.android)
-     kapt(libs.hilt.android.compiler)
+     ksp(libs.hilt.android.compiler)
      implementation(libs.hilt.navigation.compose)
     // 🔥 切换为纯正的 Kotlin 专属 AI 驱动客户端与 Ktor 网络引擎
     implementation(libs.openai.kotlin.client)

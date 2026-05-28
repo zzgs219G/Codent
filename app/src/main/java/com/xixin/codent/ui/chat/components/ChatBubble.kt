@@ -43,22 +43,27 @@ fun ChatBubble(
     var showEditDialog by remember { mutableStateOf(false) }
     var editText by remember { mutableStateOf(msg.content) }
     val screenWidth = LocalConfiguration.current.screenWidthDp.dp
-    val maxBubbleWidth = screenWidth * 0.95f
-    val bubbleShape = if (isUser) RoundedCornerShape(20.dp, 20.dp, 4.dp, 20.dp) else RoundedCornerShape(20.dp, 20.dp, 20.dp, 4.dp)
-    val bubbleColor = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
-    val textColor = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    val maxBubbleWidth = screenWidth * 0.9f
+    // Minimalist: Softer, larger corners, more subtle differences between user and AI
+    val bubbleShape = if (isUser) RoundedCornerShape(24.dp, 24.dp, 8.dp, 24.dp) else RoundedCornerShape(24.dp, 24.dp, 24.dp, 8.dp)
+    // Minimalist: Very subtle background colors for bubbles
+    val bubbleColor = if (isUser) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f) else Color.Transparent
+    val textColor = MaterialTheme.colorScheme.onSurface
 
     Box(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
         contentAlignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
     ) {
         Surface(
-            shape = bubbleShape, color = bubbleColor,
+            shape = bubbleShape,
+            color = bubbleColor,
+            // Minimalist: Only AI gets a slight border if it's completely transparent
+            border = if (!isUser) null else null,
             modifier = Modifier
                 .widthIn(max = maxBubbleWidth)
                 .then(if (isUser && !msg.isLoading) Modifier.clickable { showEditDialog = true } else Modifier)
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column(modifier = Modifier.padding(if (isUser) 16.dp else 8.dp)) {
 
                 if (msg.reasoningContent.isNotEmpty()) {
                     ReasoningBox(text = msg.reasoningContent, isLoading = msg.isLoading)

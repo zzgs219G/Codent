@@ -19,7 +19,7 @@ coil = "3.0.0-rc01"
 openai-kotlin = "3.8.2"
 hilt = "2.52"
 hiltNavigationCompose = "1.2.0"
-ksp = "2.1.0-1.0.26"
+ksp = "2.1.0-1.0.29"
  
  
 [libraries]

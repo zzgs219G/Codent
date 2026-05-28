@@ -4,6 +4,7 @@ import com.xixin.codent.data.model.ChatMessage
 import com.xixin.codent.data.model.FileNode
 import com.xixin.codent.data.model.PatchProposal
 import com.xixin.codent.data.repository.SettingsRepository
+import com.xixin.codent.data.repository.ApiProvider
 
 /**
  * 统一的 UI 状态

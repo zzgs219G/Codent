@@ -14,6 +14,8 @@ import java.io.File
 import java.nio.file.Path
 import java.nio.file.Paths
 import kotlin.io.path.*
+import javax.inject.Inject
+import javax.inject.Singleton
 @Singleton // 🔥 标记为单例
  class LocalFileRepository @Inject constructor() { 
     private val ignoredDirectories = setOf("build", ".git", ".gradle", ".idea", "node_modules", "captures")

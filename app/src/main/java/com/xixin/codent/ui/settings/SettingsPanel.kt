@@ -63,184 +63,187 @@ fun SettingsPanel(
 
     Column(modifier = Modifier.fillMaxSize()) {
 
-        CenterAlignedTopAppBar(title = { Text("Codent 核心配置") })
+        LargeTopAppBar(
+            title = {
+                Text(
+                    "Settings",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            colors = TopAppBarDefaults.largeTopAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        )
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+                .padding(horizontal = 24.dp, vertical = 16.dp)
+                .padding(bottom = 80.dp), // Space for nav bar
+            verticalArrangement = Arrangement.spacedBy(32.dp) // Minimalist: Generous spacing between sections
         ) {
 
-            // ── 卡片 1：一键切换服务商 ───────────────────────────
-            OutlinedCard(
-                modifier = Modifier.fillMaxWidth(),
-                colors   = CardDefaults.outlinedCardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+            // ── Section 1: AI Provider ───────────────────────────
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    "AI Provider",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary
                 )
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { showProviders = !showProviders }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            Text("🚀 快速切换 AI 服务商", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                            Text("DeepSeek 503 时一键备用", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Icon(
-                            Icons.Default.ExpandMore,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-
-                    AnimatedVisibility(
-                        visible = showProviders,
-                        enter   = expandVertically() + fadeIn(),
-                        exit    = shrinkVertically() + fadeOut()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(top = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showProviders = !showProviders }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            PRESET_PROVIDERS.forEach { provider ->
-                                val isSelected = inputBaseUrl == provider.baseUrl && inputModel == provider.defaultModel
-                                ProviderItem(
-                                    provider   = provider,
-                                    isSelected = isSelected,
-                                    onClick    = {
-                                        if (provider.baseUrl.isNotBlank()) inputBaseUrl = provider.baseUrl
-                                        if (provider.defaultModel.isNotBlank()) inputModel = provider.defaultModel
-                                        onApplyProvider(provider)
-                                        showProviders = false
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    }
-                                )
+                            Column {
+                                Text("Quick Switch", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+                                Text("Select a preset provider", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                        }
-                    }
-                }
-            }
-
-            // ── 卡片 2：手动配置 ─────────────────────────────────
-            OutlinedCard(
-                modifier = Modifier.fillMaxWidth(),
-                colors   = CardDefaults.outlinedCardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                )
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-
-                    Text("⚙️ 手动配置 (兼容所有 OpenAI 格式接口)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    OutlinedTextField(
-                        value         = inputBaseUrl,
-                        onValueChange = { inputBaseUrl = it },
-                        label         = { Text("Base URL") },
-                        leadingIcon   = { Icon(Icons.Default.Link, contentDescription = null) },
-                        placeholder   = { Text("https://api.deepseek.com/v1/chat/completions") },
-                        modifier      = Modifier.fillMaxWidth(),
-                        singleLine    = true
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    OutlinedTextField(
-                        value         = inputKey,
-                        onValueChange = { inputKey = it },
-                        label         = { Text("API Key") },
-                        leadingIcon   = { Icon(Icons.Default.Key, contentDescription = null) },
-                        trailingIcon  = {
-                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                Icon(
-                                    imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = if (passwordVisible) "隐藏" else "显示"
-                                )
-                            }
-                        },
-                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        keyboardOptions      = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Next),
-                        modifier             = Modifier.fillMaxWidth(),
-                        singleLine           = true
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    OutlinedTextField(
-                        value         = inputModel,
-                        onValueChange = { inputModel = it },
-                        label         = { Text("模型名称") },
-                        placeholder   = { Text("deepseek-chat") },
-                        modifier      = Modifier.fillMaxWidth(),
-                        singleLine    = true
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider()
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // 深度思考开关
-                    Row(
-                        modifier              = Modifier.fillMaxWidth(),
-                        verticalAlignment     = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("🧠 深度思考模式", style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                "仅 deepseek-reasoner 等模型支持，其他模型请关闭",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            Icon(
+                                Icons.Default.ExpandMore,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Switch(
-                            checked         = thinkingEnabled,
-                            onCheckedChange = {
-                                thinkingEnabled = it
-                                onSaveThinking(it)
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+
+                        AnimatedVisibility(
+                            visible = showProviders,
+                            enter   = expandVertically() + fadeIn(),
+                            exit    = shrinkVertically() + fadeOut()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                PRESET_PROVIDERS.forEach { provider ->
+                                    val isSelected = inputBaseUrl == provider.baseUrl && inputModel == provider.defaultModel
+                                    ProviderItem(
+                                        provider   = provider,
+                                        isSelected = isSelected,
+                                        onClick    = {
+                                            if (provider.baseUrl.isNotBlank()) inputBaseUrl = provider.baseUrl
+                                            if (provider.defaultModel.isNotBlank()) inputModel = provider.defaultModel
+                                            onApplyProvider(provider)
+                                            showProviders = false
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        }
+                                    )
+                                }
                             }
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    Button(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onSaveConfig(inputBaseUrl, inputKey, inputModel)
-                        },
-                        modifier = Modifier.align(Alignment.End)
-                    ) {
-                        Icon(Icons.Default.Save, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("保存配置")
+                        }
                     }
                 }
             }
 
-            // ── 提示卡片 ─────────────────────────────────────────
-            Surface(
-                color  = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
-                shape  = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            // ── Section 2: Manual Configuration ─────────────────────────────────
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text(
-                    text = "💡 遇到 503 错误？点「快速切换」改用 deepseek-chat 或 Groq，立刻恢复使用。",
-                    style    = MaterialTheme.typography.bodySmall,
-                    color    = MaterialTheme.colorScheme.onTertiaryContainer,
-                    modifier = Modifier.padding(12.dp)
+                    "Manual Configuration",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary
                 )
+
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        OutlinedTextField(
+                            value         = inputBaseUrl,
+                            onValueChange = { inputBaseUrl = it },
+                            label         = { Text("Base URL") },
+                            leadingIcon   = { Icon(Icons.Default.Link, contentDescription = null) },
+                            placeholder   = { Text("https://api.deepseek.com/v1/chat/completions") },
+                            modifier      = Modifier.fillMaxWidth(),
+                            singleLine    = true,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        OutlinedTextField(
+                            value         = inputKey,
+                            onValueChange = { inputKey = it },
+                            label         = { Text("API Key") },
+                            leadingIcon   = { Icon(Icons.Default.Key, contentDescription = null) },
+                            trailingIcon  = {
+                                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                    Icon(
+                                        imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = if (passwordVisible) "Hide" else "Show"
+                                    )
+                                }
+                            },
+                            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            keyboardOptions      = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Next),
+                            modifier             = Modifier.fillMaxWidth(),
+                            singleLine           = true,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        OutlinedTextField(
+                            value         = inputModel,
+                            onValueChange = { inputModel = it },
+                            label         = { Text("Model Name") },
+                            placeholder   = { Text("deepseek-chat") },
+                            modifier      = Modifier.fillMaxWidth(),
+                            singleLine    = true,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        // 深度思考开关
+                        Row(
+                            modifier              = Modifier.fillMaxWidth().padding(top = 8.dp),
+                            verticalAlignment     = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Thinking Mode", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                                Text(
+                                    "Requires a reasoning model",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Switch(
+                                checked         = thinkingEnabled,
+                                onCheckedChange = {
+                                    thinkingEnabled = it
+                                    onSaveThinking(it)
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                }
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onSaveConfig(inputBaseUrl, inputKey, inputModel)
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(top = 16.dp).height(50.dp),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Icon(Icons.Default.Save, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Save Configuration")
+                        }
+                    }
+                }
             }
         }
     }

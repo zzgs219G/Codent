@@ -16,12 +16,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xixin.codent.data.model.FileNode
-import com.xixin.codent.data.model.WorkspaceState
+import com.xixin.codent.presentation.common.MainUiState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExplorerPanel(
-    uiState: WorkspaceState,
+    uiState: MainUiState,
     onInitWorkspace: () -> Unit,
     onNavigateBack: () -> Unit,
     onFolderClick: (String) -> Unit, // 🔥 这里改成了 String
@@ -29,67 +29,105 @@ fun ExplorerPanel(
 ) {
     if (uiState.directoryStack.isEmpty()) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(32.dp),
+            modifier = Modifier.fillMaxSize().padding(48.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(72.dp), tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(16.dp))
-            Text("尚未挂载 Android 项目空间", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(32.dp))
-            FilledTonalButton(
+            Icon(
+                imageVector = Icons.Default.FolderOpen,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+            )
+            Spacer(Modifier.height(24.dp))
+            Text(
+                "Select a workspace",
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Choose the root directory of your project",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(48.dp))
+            Button(
                 onClick = onInitWorkspace,
-                modifier = Modifier.fillMaxWidth().height(56.dp)
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = MaterialTheme.shapes.extraLarge,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
             ) {
-                Text("选择本地项目根目录", fontSize = 16.sp)
+                Text("Open Folder", style = MaterialTheme.typography.titleMedium)
             }
         }
     } else {
         Column(modifier = Modifier.fillMaxSize()) {
-            CenterAlignedTopAppBar(
+            LargeTopAppBar(
                 title = {
                     Text(
-                        text = if (uiState.directoryStack.size > 1) "项目子模块" else "项目根目录",
-                        style = MaterialTheme.typography.titleMedium
+                        text = if (uiState.directoryStack.size > 1) uiState.directoryStack.last().substringAfterLast("/") else "Workspace",
+                        style = MaterialTheme.typography.headlineMedium
                     )
                 },
                 navigationIcon = {
                     if (uiState.directoryStack.size > 1) {
                         IconButton(onClick = onNavigateBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     }
-                }
+                },
+                colors = TopAppBarDefaults.largeTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                )
             )
             if (uiState.isSafLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 }
             } else if (uiState.currentFiles.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("该目录下没有文件", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Empty folder", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    // 🔥 这里的 key 用了 it.path
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 80.dp) // space for nav bar
+                ) {
                     items(uiState.currentFiles, key = { it.path }) { fileNode -> 
                         ListItem(
-                            headlineContent = { Text(fileNode.name) },
+                            headlineContent = {
+                                Text(
+                                    text = fileNode.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
                             leadingContent = {
                                 Icon(
                                     imageVector = if (fileNode.isDirectory) Icons.Default.Folder else Icons.AutoMirrored.Filled.InsertDriveFile,
                                     contentDescription = null,
-                                    tint = if (fileNode.isDirectory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+                                    tint = if (fileNode.isDirectory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(24.dp)
                                 )
                             },
-                            modifier = Modifier.clickable {
-                                if (fileNode.isDirectory) 
-                                    onFolderClick(fileNode.path) // 🔥 这里把报错的 fileNode.uri 彻底改成了 fileNode.path
-                                else 
-                                    onFileClick(fileNode)
-                            }
+                            colors = ListItemDefaults.colors(
+                                containerColor = MaterialTheme.colorScheme.surface
+                            ),
+                            modifier = Modifier
+                                .clickable {
+                                    if (fileNode.isDirectory)
+                                        onFolderClick(fileNode.path)
+                                    else
+                                        onFileClick(fileNode)
+                                }
+                                .padding(horizontal = 8.dp)
                         )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant, thickness = 0.5.dp)
+                        // Minimalist: No dividers between list items. The spacing and typography provide enough hierarchy.
                     }
                 }
             }
