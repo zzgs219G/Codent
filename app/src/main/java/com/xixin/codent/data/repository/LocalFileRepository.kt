@@ -1,5 +1,6 @@
 package com.xixin.codent.data.repository
-
+import javax.inject.Inject
+import javax.inject.Singleton
 import com.xixin.codent.data.model.FileNode
 import com.xixin.codent.wrapper.log.AppLog
 import kotlinx.coroutines.Dispatchers

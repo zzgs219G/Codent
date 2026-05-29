@@ -28,6 +28,9 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+// 🔥 手动补上这两个核心数据类的导包
+import com.xixin.codent.data.model.FileNode
+import com.xixin.codent.data.model.PatchProposal
 
 @HiltViewModel // 🔥 标记为 Hilt ViewModel
 class MainViewModel @Inject constructor(

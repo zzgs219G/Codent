@@ -9,58 +9,72 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xixin.codent.data.model.FileNode
-import com.xixin.codent.data.model.WorkspaceState
+import com.xixin.codent.presentation.common.MainUiState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExplorerPanel(
-    uiState: WorkspaceState,
+    uiState: MainUiState,
+    onOpenDrawer: () -> Unit,
     onInitWorkspace: () -> Unit,
     onNavigateBack: () -> Unit,
-    onFolderClick: (String) -> Unit, // 🔥 这里改成了 String
+    onFolderClick: (String) -> Unit,
     onFileClick: (FileNode) -> Unit
 ) {
-    if (uiState.directoryStack.isEmpty()) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(32.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(72.dp), tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(16.dp))
-            Text("尚未挂载 Android 项目空间", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(32.dp))
-            FilledTonalButton(
-                onClick = onInitWorkspace,
-                modifier = Modifier.fillMaxWidth().height(56.dp)
-            ) {
-                Text("选择本地项目根目录", fontSize = 16.sp)
-            }
-        }
-    } else {
-        Column(modifier = Modifier.fillMaxSize()) {
-            CenterAlignedTopAppBar(
-                title = {
-                    Text(
-                        text = if (uiState.directoryStack.size > 1) "项目子模块" else "项目根目录",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                },
-                navigationIcon = {
-                    if (uiState.directoryStack.size > 1) {
-                        IconButton(onClick = onNavigateBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                        }
+    // 🔥 绝杀修复：把 TopAppBar 提到最高层级，不管工作区是不是空，顶栏和 Hamburger 侧边栏菜单永远可用！
+    Column(modifier = Modifier.fillMaxSize()) {
+        CenterAlignedTopAppBar(
+            title = {
+                Text(
+                    text = if (uiState.directoryStack.size > 1) "项目子模块" else "项目资源",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            navigationIcon = {
+                if (uiState.directoryStack.size > 1) {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                } else {
+                    IconButton(onClick = onOpenDrawer) {
+                        Icon(Icons.Default.Menu, contentDescription = "主菜单")
                     }
                 }
+            },
+            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer
             )
+        )
+        
+        // 顶栏以下根据状态渲染内容
+        if (uiState.directoryStack.isEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(32.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(72.dp), tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(16.dp))
+                Text("尚未挂载 Android 项目空间", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(32.dp))
+                FilledTonalButton(
+                    onClick = onInitWorkspace,
+                    modifier = Modifier.fillMaxWidth().height(56.dp)
+                ) {
+                    Text("选择本地项目根目录", fontSize = 16.sp)
+                }
+            }
+        } else {
             if (uiState.isSafLoading) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
@@ -71,8 +85,7 @@ fun ExplorerPanel(
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    // 🔥 这里的 key 用了 it.path
-                    items(uiState.currentFiles, key = { it.path }) { fileNode -> 
+                    items(uiState.currentFiles, key = { it.path }) { fileNode ->
                         ListItem(
                             headlineContent = { Text(fileNode.name) },
                             leadingContent = {
@@ -83,9 +96,9 @@ fun ExplorerPanel(
                                 )
                             },
                             modifier = Modifier.clickable {
-                                if (fileNode.isDirectory) 
-                                    onFolderClick(fileNode.path) // 🔥 这里把报错的 fileNode.uri 彻底改成了 fileNode.path
-                                else 
+                                if (fileNode.isDirectory)
+                                    onFolderClick(fileNode.path)
+                                else
                                     onFileClick(fileNode)
                             }
                         )

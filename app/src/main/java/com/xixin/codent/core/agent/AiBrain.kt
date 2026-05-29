@@ -1,5 +1,7 @@
 package com.xixin.codent.core.agent
 
+import javax.inject.Inject
+import javax.inject.Singleton
 import com.xixin.codent.data.model.ChatMessage as AppChatMessage
 import com.xixin.codent.data.repository.LocalFileRepository
 import com.xixin.codent.wrapper.log.AppLog

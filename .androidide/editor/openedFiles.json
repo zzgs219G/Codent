@@ -1,67 +1,157 @@
 {
   "allFiles": [
     {
-      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/core/agent/CodePatcher.kt",
+      "file": "/sdcard/CodeOnTheGoProjects/Codent/app/build.gradle.kts",
+      "selection": {
+        "end": {
+          "column": 5,
+          "index": 3255,
+          "line": 106
+        },
+        "start": {
+          "column": 5,
+          "index": 3255,
+          "line": 106
+        }
+      }
+    },
+    {
+      "file": "/sdcard/CodeOnTheGoProjects/Codent/gradle/libs.versions.toml",
+      "selection": {
+        "end": {
+          "column": 19,
+          "index": 374,
+          "line": 21
+        },
+        "start": {
+          "column": 19,
+          "index": 374,
+          "line": 21
+        }
+      }
+    },
+    {
+      "file": "/sdcard/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/core/agent/AiBrain.kt",
       "selection": {
         "end": {
           "column": 0,
-          "index": 406,
-          "line": 14
+          "index": 36,
+          "line": 1
         },
         "start": {
           "column": 0,
-          "index": 406,
-          "line": 14
+          "index": 36,
+          "line": 1
         }
       }
     },
     {
-      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/core/agent/AiBrain.kt",
+      "file": "/sdcard/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/data/repository/LocalFileRepository.kt",
       "selection": {
         "end": {
-          "column": 4,
-          "index": 2532,
-          "line": 57
+          "column": 29,
+          "index": 97,
+          "line": 2
         },
         "start": {
-          "column": 4,
-          "index": 2532,
-          "line": 57
+          "column": 29,
+          "index": 97,
+          "line": 2
         }
       }
     },
     {
-      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/build.gradle.kts",
+      "file": "/sdcard/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/data/repository/ChatHistoryRepository.kt",
       "selection": {
         "end": {
-          "column": 27,
-          "index": 322,
-          "line": 9
+          "column": 71,
+          "index": 379,
+          "line": 8
         },
         "start": {
-          "column": 27,
-          "index": 322,
-          "line": 9
+          "column": 71,
+          "index": 379,
+          "line": 8
         }
       }
     },
     {
-      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/gradle/libs.versions.toml",
+      "file": "/sdcard/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/data/repository/SettingsRepository.kt",
       "selection": {
         "end": {
-          "column": 109,
-          "index": 502,
-          "line": 26
+          "column": 52,
+          "index": 2032,
+          "line": 64
         },
         "start": {
-          "column": 109,
-          "index": 502,
-          "line": 26
+          "column": 52,
+          "index": 2032,
+          "line": 64
         }
       }
     },
     {
-      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/core/agent/AgentEvent.kt",
+      "file": "/sdcard/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/main/MainScreen.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 11418,
+          "line": 256
+        },
+        "start": {
+          "column": 1,
+          "index": 11418,
+          "line": 256
+        }
+      }
+    },
+    {
+      "file": "/sdcard/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/presentation/main/MainViewModel.kt",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 1419,
+          "line": 33
+        },
+        "start": {
+          "column": 0,
+          "index": 1419,
+          "line": 33
+        }
+      }
+    },
+    {
+      "file": "/sdcard/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/presentation/common/UiState.kt",
+      "selection": {
+        "end": {
+          "column": 51,
+          "index": 296,
+          "line": 6
+        },
+        "start": {
+          "column": 51,
+          "index": 296,
+          "line": 6
+        }
+      }
+    },
+    {
+      "file": "/sdcard/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/explorer/ExplorerPanel.kt",
+      "selection": {
+        "end": {
+          "column": 1,
+          "index": 4655,
+          "line": 103
+        },
+        "start": {
+          "column": 1,
+          "index": 4655,
+          "line": 103
+        }
+      }
+    },
+    {
+      "file": "/sdcard/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/MainActivity.kt",
       "selection": {
         "end": {
           "column": 0,
@@ -76,126 +166,51 @@
       }
     },
     {
-      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/core/agent/AgentTools.kt",
+      "file": "/sdcard/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/chat/ChatPanel.kt",
       "selection": {
         "end": {
           "column": 0,
-          "index": 3877,
-          "line": 94
+          "index": 6801,
+          "line": 161
         },
         "start": {
           "column": 0,
-          "index": 3877,
-          "line": 94
+          "index": 6801,
+          "line": 161
         }
       }
     },
     {
-      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/AndroidManifest.xml",
+      "file": "/sdcard/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/chat/components/ChatInputBar.kt",
       "selection": {
         "end": {
-          "column": 17,
-          "index": 753,
-          "line": 18
+          "column": 1,
+          "index": 6312,
+          "line": 160
         },
         "start": {
-          "column": 17,
-          "index": 753,
-          "line": 18
+          "column": 1,
+          "index": 6312,
+          "line": 160
         }
       }
     },
     {
-      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/chat/components/PatchConfirmationCard.kt",
+      "file": "/sdcard/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/editor/EditorPanel.kt",
       "selection": {
         "end": {
-          "column": 0,
-          "index": 14942,
-          "line": 333
+          "column": 1,
+          "index": 2973,
+          "line": 80
         },
         "start": {
-          "column": 0,
-          "index": 14942,
-          "line": 333
-        }
-      }
-    },
-    {
-      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/chat/ChatPanel.kt",
-      "selection": {
-        "end": {
-          "column": 0,
-          "index": 5681,
-          "line": 135
-        },
-        "start": {
-          "column": 0,
-          "index": 5681,
-          "line": 135
-        }
-      }
-    },
-    {
-      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/chat/components/ChatBubble.kt",
-      "selection": {
-        "end": {
-          "column": 9,
-          "index": 408,
-          "line": 9
-        },
-        "start": {
-          "column": 9,
-          "index": 408,
-          "line": 9
-        }
-      }
-    },
-    {
-      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/chat/components/ChatInputBar.kt",
-      "selection": {
-        "end": {
-          "column": 0,
-          "index": 2992,
-          "line": 74
-        },
-        "start": {
-          "column": 0,
-          "index": 2992,
-          "line": 74
-        }
-      }
-    },
-    {
-      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/settings/SettingsPanel.kt",
-      "selection": {
-        "end": {
-          "column": 17,
-          "index": 13078,
-          "line": 277
-        },
-        "start": {
-          "column": 17,
-          "index": 13078,
-          "line": 277
-        }
-      }
-    },
-    {
-      "file": "/storage/emulated/0/CodeOnTheGoProjects/Codent/build.gradle.kts",
-      "selection": {
-        "end": {
-          "column": 0,
-          "index": 0,
-          "line": 0
-        },
-        "start": {
-          "column": 0,
-          "index": 0,
-          "line": 0
+          "column": 1,
+          "index": 2973,
+          "line": 80
         }
       }
     }
   ],
-  "projectPath": "/storage/emulated/0/CodeOnTheGoProjects/Codent",
-  "selectedFile": "/storage/emulated/0/CodeOnTheGoProjects/Codent/build.gradle.kts"
+  "projectPath": "/sdcard/CodeOnTheGoProjects/Codent",
+  "selectedFile": "/sdcard/CodeOnTheGoProjects/Codent/app/src/main/java/com/xixin/codent/ui/editor/EditorPanel.kt"
 }

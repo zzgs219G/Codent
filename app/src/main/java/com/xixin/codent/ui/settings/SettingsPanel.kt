@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -45,6 +46,7 @@ fun SettingsPanel(
     apiKey          : String,
     currentModel    : String,
     enableThinking  : Boolean,
+    onOpenDrawer    : () -> Unit, // 🔥 引入 Drawer 触发回调
     onSaveConfig    : (String, String, String) -> Unit,
     onSaveThinking  : (Boolean) -> Unit,
     onApplyProvider : (ApiProvider) -> Unit = {}
@@ -57,14 +59,23 @@ fun SettingsPanel(
     var showProviders    by remember { mutableStateOf(false) }
     val haptic           = LocalHapticFeedback.current
 
-    // 当外部传入值变化时同步（比如 onApplyProvider 触发了 ViewModel 更新）
     LaunchedEffect(apiBaseUrl)   { inputBaseUrl = apiBaseUrl }
     LaunchedEffect(currentModel) { inputModel   = currentModel }
 
     Column(modifier = Modifier.fillMaxSize()) {
-
-        CenterAlignedTopAppBar(title = { Text("Codent 核心配置") })
-
+        // 🔥 将普通 Top Bar 升级并配置 Drawer 的 Hamburger 按钮
+        CenterAlignedTopAppBar(
+            title = { Text("Codent 核心配置", fontWeight = FontWeight.Bold) },
+            navigationIcon = {
+                IconButton(onClick = onOpenDrawer) {
+                    Icon(Icons.Default.Menu, contentDescription = "主菜单")
+                }
+            },
+            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer
+            )
+        )
+        
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -72,8 +83,7 @@ fun SettingsPanel(
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-
-            // ── 卡片 1：一键切换服务商 ───────────────────────────
+            // 一键切换服务商
             OutlinedCard(
                 modifier = Modifier.fillMaxWidth(),
                 colors   = CardDefaults.outlinedCardColors(
@@ -81,7 +91,6 @@ fun SettingsPanel(
                 )
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -101,7 +110,6 @@ fun SettingsPanel(
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
-
                     AnimatedVisibility(
                         visible = showProviders,
                         enter   = expandVertically() + fadeIn(),
@@ -129,8 +137,8 @@ fun SettingsPanel(
                     }
                 }
             }
-
-            // ── 卡片 2：手动配置 ─────────────────────────────────
+            
+            // 手动配置
             OutlinedCard(
                 modifier = Modifier.fillMaxWidth(),
                 colors   = CardDefaults.outlinedCardColors(
@@ -138,10 +146,8 @@ fun SettingsPanel(
                 )
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-
                     Text("⚙️ 手动配置 (兼容所有 OpenAI 格式接口)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     Spacer(modifier = Modifier.height(16.dp))
-
                     OutlinedTextField(
                         value         = inputBaseUrl,
                         onValueChange = { inputBaseUrl = it },
@@ -151,9 +157,7 @@ fun SettingsPanel(
                         modifier      = Modifier.fillMaxWidth(),
                         singleLine    = true
                     )
-
                     Spacer(modifier = Modifier.height(12.dp))
-
                     OutlinedTextField(
                         value         = inputKey,
                         onValueChange = { inputKey = it },
@@ -172,9 +176,7 @@ fun SettingsPanel(
                         modifier             = Modifier.fillMaxWidth(),
                         singleLine           = true
                     )
-
                     Spacer(modifier = Modifier.height(12.dp))
-
                     OutlinedTextField(
                         value         = inputModel,
                         onValueChange = { inputModel = it },
@@ -183,11 +185,10 @@ fun SettingsPanel(
                         modifier      = Modifier.fillMaxWidth(),
                         singleLine    = true
                     )
-
                     Spacer(modifier = Modifier.height(16.dp))
                     HorizontalDivider()
                     Spacer(modifier = Modifier.height(16.dp))
-
+                    
                     // 深度思考开关
                     Row(
                         modifier              = Modifier.fillMaxWidth(),
@@ -212,9 +213,7 @@ fun SettingsPanel(
                             }
                         )
                     }
-
                     Spacer(modifier = Modifier.height(24.dp))
-
                     Button(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -228,8 +227,8 @@ fun SettingsPanel(
                     }
                 }
             }
-
-            // ── 提示卡片 ─────────────────────────────────────────
+            
+            // 提示卡片
             Surface(
                 color  = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
                 shape  = RoundedCornerShape(12.dp),
@@ -253,10 +252,9 @@ private fun ProviderItem(
     onClick    : () -> Unit
 ) {
     val borderColor = if (isSelected) MaterialTheme.colorScheme.primary
-                      else MaterialTheme.colorScheme.outlineVariant
+    else MaterialTheme.colorScheme.outlineVariant
     val bgColor     = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                      else MaterialTheme.colorScheme.surface
-
+    else MaterialTheme.colorScheme.surface
     Row(
         modifier = Modifier
             .fillMaxWidth()

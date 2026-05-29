@@ -4,7 +4,9 @@
 //   - 从 SafRepository 中拆分出来，单一职责：只管聊天记录的 JSON 持久化
 //   - 异常处理统一：原来 catch 后 e.printStackTrace() 很裸，现在用 AppLog 统一
 package com.xixin.codent.data.repository
-
+import javax.inject.Inject
+import javax.inject.Singleton
+import dagger.hilt.android.qualifiers.ApplicationContext // 🔥 确保导入了这个包
 import android.content.Context
 import com.xixin.codent.data.model.ChatMessage
 import com.xixin.codent.wrapper.log.AppLog
@@ -14,7 +16,7 @@ import java.io.File
 
 @Singleton // 🔥 标记为单例
  class ChatHistoryRepository @Inject constructor(
-     private val context: Context // 🔥 Hilt 会自动注入 Context
+      @ApplicationContext private val context: Context // 🔥 Hilt 会自动注入 Context
  ) {
     private val chatHistoryFile = File(context.filesDir, "chat_history.json")
 

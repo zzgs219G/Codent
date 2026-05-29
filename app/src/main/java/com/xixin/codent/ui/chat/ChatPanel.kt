@@ -13,17 +13,19 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.xixin.codent.data.model.ChatMessage
 import com.xixin.codent.data.model.PatchProposal
 import com.xixin.codent.ui.chat.components.*
+import com.xixin.codent.ui.main.WorkspaceTab
 import kotlinx.coroutines.launch
 
-// 🔥 精确制导：带上消息索引，ViewModel 才知道该去改哪条消息的状态
 sealed class ChatAction {
     data class SendMessage(val text: String) : ChatAction()
     data class ConfirmPatch(val messageIndex: Int, val patchIndex: Int, val patch: PatchProposal) : ChatAction()
@@ -33,17 +35,19 @@ sealed class ChatAction {
     data class EditMessage(val index: Int, val text: String) : ChatAction()
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatPanel(
     messages: List<ChatMessage>,
     isAgentWorking: Boolean,
-    pendingPatches: List<PatchProposal>, // 参数保留防止上层报错，但内部完全不用它了
+    pendingPatches: List<PatchProposal> = emptyList(), // 参数保留兼顾签名
+    onOpenDrawer: () -> Unit,
+    onNavigateTab: (WorkspaceTab) -> Unit,
     onAction: (ChatAction) -> Unit
 ) {
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
-
+    
     val isAtBottom by remember {
         derivedStateOf {
             val layoutInfo = listState.layoutInfo
@@ -53,37 +57,57 @@ fun ChatPanel(
             lastVisibleItem?.index == totalItems - 1
         }
     }
-
+    
     LaunchedEffect(messages.size, messages.lastOrNull()?.content?.length, messages.lastOrNull()?.reasoningContent?.length) {
         if (messages.isNotEmpty() && isAtBottom) {
             listState.scrollToItem(listState.layoutInfo.totalItemsCount - 1)
         }
     }
-
+    
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .imePadding() 
+                .imePadding()
         ) {
-            Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("对话记录与调度", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-                    TextButton(
-                        onClick = { onAction(ChatAction.DeleteMessage(-1)) }, 
+            // 🔥 将旧的简单行顶栏升级为标准的 CenterAlignedTopAppBar
+            CenterAlignedTopAppBar(
+                title = {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "Codent 助手",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = if (isAgentWorking) "自主进化调度运行中..." else "随时准备阅读和优化项目代码",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isAgentWorking) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                        )
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onOpenDrawer) {
+                        Icon(imageVector = Icons.Default.Menu, contentDescription = "打开主菜单")
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { onAction(ChatAction.DeleteMessage(-1)) },
                         enabled = !isAgentWorking
                     ) {
-                        Icon(Icons.Default.DeleteSweep, contentDescription = "清空记忆", modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("清空记忆")
+                        Icon(
+                            imageVector = Icons.Default.DeleteSweep,
+                            contentDescription = "清空记忆",
+                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                        )
                     }
-                }
-            }
-
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
+            )
+            
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -93,31 +117,33 @@ fun ChatPanel(
                 contentPadding = PaddingValues(vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // 🔥 核心升级：补丁已经融合进 ChatBubble 里了，这里只需要循环气泡！
                 itemsIndexed(messages) { index, msg ->
                     ChatBubble(
-                        msg = msg, 
-                        messageIndex = index, 
+                        msg = msg,
+                        messageIndex = index,
                         onEditUserMessage = { idx, text -> onAction(ChatAction.EditMessage(idx, text)) },
                         onPatchAction = { action -> onAction(action) }
                     )
                 }
                 item { Spacer(modifier = Modifier.height(1.dp)) }
             }
-
+            
+            // 🔥 为 InputBar 传入导航切换回调，实现输入栏上方的胶囊按键操作
             ChatInputBar(
                 isAgentWorking = isAgentWorking,
+                onNavigateTab = onNavigateTab,
+                onClearChat = { onAction(ChatAction.DeleteMessage(-1)) },
                 onSendMessage = { onAction(ChatAction.SendMessage(it)) }
             )
         }
-
+        
         AnimatedVisibility(
             visible = !isAtBottom && messages.isNotEmpty(),
             enter = fadeIn() + scaleIn(),
             exit = fadeOut() + scaleOut(),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(bottom = 100.dp, end = 16.dp)
+                .padding(bottom = 160.dp, end = 16.dp) // 🔥 提升高度避让输入框上的快捷键
         ) {
             SmallFloatingActionButton(
                 onClick = {
@@ -133,3 +159,4 @@ fun ChatPanel(
         }
     }
 }
+

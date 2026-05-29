@@ -4,7 +4,7 @@ import com.xixin.codent.data.model.ChatMessage
 import com.xixin.codent.data.model.FileNode
 import com.xixin.codent.data.model.PatchProposal
 import com.xixin.codent.data.repository.SettingsRepository
-
+import com.xixin.codent.data.repository.ApiProvider
 /**
  * 统一的 UI 状态
  * 🔥 所有状态都在这里，没有分散的状态变量

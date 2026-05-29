@@ -1,7 +1,9 @@
 package com.xixin.codent.data.repository
 
 import android.content.Context
-
+import javax.inject.Inject
+import javax.inject.Singleton
+import dagger.hilt.android.qualifiers.ApplicationContext // 🔥 确保导入了这个包
 /**
  * API 服务商预设配置
  * 用户可以在设置界面一键切换，无需手动输入 URL
@@ -60,7 +62,7 @@ val PRESET_PROVIDERS = listOf(
 
 @Singleton // 🔥 标记为单例
 class SettingsRepository @Inject constructor(
-    private val context: Context // 🔥 Hilt 会自动注入 Context
+    @ApplicationContext private val context: Context // 🔥 Hilt 会自动注入 Context
 ){
 
     private val prefs = context.getSharedPreferences("codent_settings", Context.MODE_PRIVATE)
